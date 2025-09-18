@@ -1,0 +1,78 @@
+---
+title: "MSB1015_final_assignment_maaike_kessen"
+author: "Maaike Kessen"
+format: html
+editor: visual
+---
+
+## Load libraries
+
+## Set working directory and load data set
+
+```{r}
+#set working directory
+setwd("~/Desktop/uni/scientific programming/project")
+
+#load the data
+#convert all different NA options into a proper NA
+df <- read.csv("alzheimers_disease_data.csv", sep = ";", header = TRUE,
+               na.strings = c("NaN", "nan", "Nan", "NA", "N/A", ""))
+
+#inspect the data
+str(df)
+
+print("--------------------------------------------------------------------------------------")
+print("missing values:")
+colSums(is.na(df)) #count missing values
+
+print("--------------------------------------------------------------------------------------")
+print("summary:")
+summary(df)
+```
+
+## Fix the variables
+
+```{r}
+fix_variable <- function(x, min_val, max_val) {
+  #replace commas with dots, convert to numeric
+  x <- as.numeric(gsub(",", ".", x))
+  
+  #rescale values until inside expected range
+  x <- sapply(x, function(val) {
+    if (is.na(val)) return(NA)
+    
+    while (val > max_val) {
+      val <- val / 10
+    }
+    return(val)
+  })
+  
+  return(as.numeric(x))
+}
+
+#set the ranges the variables should have
+ranges <- list(
+  BMI = c(15, 40),
+  AlcoholConsumption = c(0, 20),
+  PhysicalActivity = c(0, 10),
+  DietQuality = c(0, 10),
+  SleepQuality = c(4, 10),
+  SystolicBP = c(90, 180),
+  DiastolicBP = c(60, 120),
+  CholesterolTotal = c(150, 300),
+  CholesterolLDL = c(50, 200),
+  CholesterolHDL = c(20, 100),
+  CholesterolTriglycerides = c(50, 400),
+  MMSE = c(0, 30),
+  FunctionalAssessment = c(0, 10),
+  ADL = c(0, 10)
+)
+
+#apply function to variables
+for (var in names(ranges)) {
+  df[[var]] <- fix_variable(df[[var]],
+                            min_val = ranges[[var]][1],
+                            max_val = ranges[[var]][2])
+}
+
+```
