@@ -11,7 +11,7 @@ editor: visual
 
 ```{r}
 #set working directory
-setwd("~/Desktop/uni/scientific programming/project")
+setwd("C:/Users/Maaike/OneDrive/Documenten/uni/scientific programming/assignment/ScientificProgrammingAssignment")
 
 #load the data
 #convert all different NA options into a proper NA
@@ -30,17 +30,25 @@ print("summary:")
 summary(df)
 ```
 
+By investigating the results above, you can see that there are some formatting issues for the numeric variables.
+
 ## Fix the variables
 
+The block below tackles the formatting issues in the variables.
+
+I also decided to drop the DoctorInCharge variable, as it is of no use to me.
+
 ```{r}
+# function to clean numeric variables with commas and out-of-range values
 fix_variable <- function(x, min_val, max_val) {
-  #replace commas with dots, convert to numeric
-  x <- as.numeric(gsub(",", ".", x))
+  # replace commas with dots
+  x <- gsub(",", ".", as.character(x))
+  # convert to numeric
+  x <- as.numeric(x)
   
-  #rescale values until inside expected range
+  # rescale implausible values (e.g. 250 instead of 25.0)
   x <- sapply(x, function(val) {
     if (is.na(val)) return(NA)
-    
     while (val > max_val) {
       val <- val / 10
     }
@@ -50,8 +58,9 @@ fix_variable <- function(x, min_val, max_val) {
   return(as.numeric(x))
 }
 
-#set the ranges the variables should have
+# define expected ranges for ALL numeric variables
 ranges <- list(
+  Age = c(60, 90),
   BMI = c(15, 40),
   AlcoholConsumption = c(0, 20),
   PhysicalActivity = c(0, 10),
@@ -68,11 +77,224 @@ ranges <- list(
   ADL = c(0, 10)
 )
 
-#apply function to variables
+# apply the fix function to all variables in ranges
 for (var in names(ranges)) {
-  df[[var]] <- fix_variable(df[[var]],
-                            min_val = ranges[[var]][1],
-                            max_val = ranges[[var]][2])
+  if (var %in% names(df)) {
+    df[[var]] <- fix_variable(df[[var]],
+                              min_val = ranges[[var]][1],
+                              max_val = ranges[[var]][2])
+  }
 }
 
+# drop confidential column
+df$DoctorInCharge <- NULL
+
+# check results
+sapply(df[names(ranges)], function(x) range(x, na.rm = TRUE))
+
+```
+
+```{r}
+#inspect the data
+str(df)
+
+print("--------------------------------------------------------------------------------------")
+print("missing values:")
+colSums(is.na(df)) #count missing values
+
+print("--------------------------------------------------------------------------------------")
+print("summary:")
+summary(df)
+```
+
+```{r}
+# define expected ranges again
+ranges <- list(
+  BMI = c(15, 40),
+  SleepQuality = c(4, 10),
+  ADL = c(0, 10),
+  MMSE = c(0, 30),
+  FunctionalAssessment = c(0, 10),
+  AlcoholConsumption = c(0, 20),
+  CholesterolTriglycerides = c(50, 400)
+)
+
+# function to find rows with out-of-range values
+find_outliers <- function(df, var, min_val, max_val) {
+  bad_rows <- which(df[[var]] < min_val | df[[var]] > max_val)
+  if (length(bad_rows) > 0) {
+    return(data.frame(
+      PatientID = df$PatientID[bad_rows],
+      Variable = var,
+      Value = df[[var]][bad_rows],
+      Row = bad_rows
+    ))
+  } else {
+    return(NULL)
+  }
+}
+
+# apply across all defined ranges
+outlier_report <- do.call(rbind,
+                          lapply(names(ranges), function(v) 
+                            find_outliers(df, v, ranges[[v]][1], ranges[[v]][2])))
+
+outlier_report
+```
+
+```{r}
+# set the corrupted entries to NA
+df$BMI[df$PatientID == 6792] <- NA
+df$SleepQuality[df$PatientID == 6644] <- NA
+df$ADL[df$PatientID == 6424] <- NA
+df$FunctionalAssessment[df$PatientID == 6423] <- NA
+df$CholesterolTriglycerides[df$PatientID == 6485] <- NA
+```
+
+```{r}
+summary(df$BMI)
+summary(df$SleepQuality)
+summary(df$ADL)
+summary(df$FunctionalAssessment)
+summary(df$CholesterolTriglycerides)
+```
+
+```{r}
+# median imputation for all numeric columns
+for (col in names(df)) {
+  if (is.numeric(df[[col]])) {
+    if (any(is.na(df[[col]]))) {
+      median_val <- median(df[[col]], na.rm = TRUE)
+      df[[col]][is.na(df[[col]])] <- median_val
+    }
+  }
+}
+
+# check if any NAs remain
+colSums(is.na(df))
+```
+
+```{r}
+numeric_vars <- c("Age", "BMI", "AlcoholConsumption", "PhysicalActivity", 
+                  "DietQuality", "SleepQuality", "SystolicBP", "DiastolicBP", 
+                  "CholesterolTotal", "CholesterolLDL", "CholesterolHDL", 
+                  "CholesterolTriglycerides", "MMSE", 
+                  "FunctionalAssessment", "ADL")
+
+for (var in numeric_vars) {
+  boxplot(df[[var]], main = paste("Boxplot of", var),
+          ylab = var)
+}
+
+```
+
+```{r}
+cat_vars <- c("Gender", "Ethnicity", "EducationLevel", "Smoking",
+              "FamilyHistoryAlzheimers", "CardiovascularDisease",
+              "Diabetes", "Depression", "HeadInjury", "Hypertension",
+              "MemoryComplaints", "BehavioralProblems", "Confusion",
+              "Disorientation", "PersonalityChanges", 
+              "DifficultyCompletingTasks", "Forgetfulness", "Diagnosis")
+
+for (var in cat_vars) {
+  barplot(table(df[[var]]), 
+          main = paste("Barplot of", var),
+          xlab = var,
+          ylab = "Count")
+}
+```
+
+```{r}
+sapply(df, class)
+```
+
+```{r}
+df$Gender <- factor(df$Gender, levels = c(0,1), labels = c("Male","Female"))
+df$Ethnicity <- factor(df$Ethnicity, levels = c(0,1,2,3),
+                       labels = c("Caucasian","African American","Asian","Other"))
+df$EducationLevel <- factor(df$EducationLevel, levels = 0:3,
+                            labels = c("None","High School","Bachelor","Higher"))
+df$Smoking <- factor(df$Smoking, levels = c(0,1), labels = c("No","Yes"))
+df$FamilyHistoryAlzheimers <- factor(df$FamilyHistoryAlzheimers, levels = c(0,1), labels = c("No","Yes"))
+df$CardiovascularDisease <- factor(df$CardiovascularDisease, levels = c(0,1), labels = c("No","Yes"))
+df$Diabetes <- factor(df$Diabetes, levels = c(0,1), labels = c("No","Yes"))
+df$Depression <- factor(df$Depression, levels = c(0,1), labels = c("No","Yes"))
+df$HeadInjury <- factor(df$HeadInjury, levels = c(0,1), labels = c("No","Yes"))
+df$Hypertension <- factor(df$Hypertension, levels = c(0,1), labels = c("No","Yes"))
+df$MemoryComplaints <- factor(df$MemoryComplaints, levels = c(0,1), labels = c("No","Yes"))
+df$BehavioralProblems <- factor(df$BehavioralProblems, levels = c(0,1), labels = c("No","Yes"))
+df$Confusion <- factor(df$Confusion, levels = c(0,1), labels = c("No","Yes"))
+df$Disorientation <- factor(df$Disorientation, levels = c(0,1), labels = c("No","Yes"))
+df$PersonalityChanges <- factor(df$PersonalityChanges, levels = c(0,1), labels = c("No","Yes"))
+df$DifficultyCompletingTasks <- factor(df$DifficultyCompletingTasks, levels = c(0,1), labels = c("No","Yes"))
+df$Forgetfulness <- factor(df$Forgetfulness, levels = c(0,1), labels = c("No","Yes"))
+df$Diagnosis <- factor(df$Diagnosis, levels = c(0,1), labels = c("No","Yes"))
+```
+
+```{r}
+sapply(df, class)
+```
+
+```{r}
+table(df$Diagnosis)
+prop.table(table(df$Diagnosis))
+```
+
+*moderately imbalanced (65% vs 35%) but not severely skewed, so standard classification approaches are applicable.*
+
+```{r}
+write.csv(df, "clean_alzheimers.csv", row.names = FALSE)
+```
+
+# data analysis
+
+```{r}
+# baseline predictors: demographics + lifestyle + medical history
+baseline_vars <- c("Age", "Gender", "Ethnicity", "EducationLevel",
+                   "BMI", "Smoking", "AlcoholConsumption", 
+                   "PhysicalActivity", "DietQuality", "SleepQuality",
+                   "FamilyHistoryAlzheimers", "CardiovascularDisease", 
+                   "Diabetes", "Depression", "HeadInjury", "Hypertension")
+```
+
+```{r}
+set.seed(123)  # reproducibility
+train_index <- sample(seq_len(nrow(df)), size = 0.7*nrow(df))
+train <- df[train_index, ]
+test  <- df[-train_index, ]
+```
+
+```{r}
+# build formula dynamically
+formula_baseline <- as.formula(
+  paste("Diagnosis ~", paste(baseline_vars, collapse = " + "))
+)
+
+# fit logistic regression
+baseline_model <- glm(formula_baseline, data = train, family = binomial)
+summary(baseline_model)
+```
+
+```{r}
+# predicted probabilities
+pred_probs <- predict(baseline_model, newdata = test, type = "response")
+
+# classify with 0.5 threshold
+pred_class <- ifelse(pred_probs > 0.5, "Yes", "No")
+pred_class <- factor(pred_class, levels = levels(test$Diagnosis))
+```
+
+```{r}
+library(caret)
+library(pROC)
+
+# confusion matrix
+confusionMatrix(pred_class, test$Diagnosis)
+
+# ROC AUC
+roc_obj <- roc(test$Diagnosis, pred_probs, levels = c("No","Yes"))
+auc(roc_obj)
+
+# plot ROC curve
+plot(roc_obj, col="blue", lwd=2, main="ROC Curve - Baseline Logistic Regression")
 ```
