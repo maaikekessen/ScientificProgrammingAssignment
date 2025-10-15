@@ -11,7 +11,7 @@ editor: visual
 
 ```{r}
 #set working directory
-setwd("C:/Users/Maaike/OneDrive/Documenten/uni/scientific programming/assignment/ScientificProgrammingAssignment")
+setwd("C:/Users/Maaike/Documents/uni/scientific programming/assignment/ScientificProgrammingAssignment")
 
 #load the data
 #convert all different NA options into a proper NA
@@ -205,10 +205,496 @@ for (var in cat_vars) {
 ```
 
 ```{r}
+# Boxplots for numeric variables
+numeric_vars <- c("Age", "BMI", "AlcoholConsumption", "PhysicalActivity", 
+                  "DietQuality", "SleepQuality", "SystolicBP", "DiastolicBP", 
+                  "CholesterolTotal", "CholesterolLDL", "CholesterolHDL", 
+                  "CholesterolTriglycerides", "MMSE", 
+                  "FunctionalAssessment", "ADL")
+
+for (var in numeric_vars) {
+  boxplot(df[[var]], main = paste("Boxplot of", var),
+          ylab = var, col = "lightblue")
+}
+
+# Barplots for categorical variables
+cat_vars <- c("Gender", "Ethnicity", "EducationLevel", "Smoking",
+              "FamilyHistoryAlzheimers", "CardiovascularDisease",
+              "Diabetes", "Depression", "HeadInjury", "Hypertension",
+              "MemoryComplaints", "BehavioralProblems", "Confusion",
+              "Disorientation", "PersonalityChanges", 
+              "DifficultyCompletingTasks", "Forgetfulness", "Diagnosis")
+
+for (var in cat_vars) {
+  barplot(table(df[[var]]),
+          main = paste("Barplot of", var),
+          xlab = var, ylab = "Count", col = "lightgreen")
+}
+
+```
+
+```{r}
+for (var in numeric_vars) {
+  boxplot(df[[var]] ~ df$Diagnosis,
+          main = paste("Boxplot of", var, "by Diagnosis"),
+          xlab = "Diagnosis", ylab = var, col = c("orange","lightblue"))
+}
+
+```
+
+```{r}
+library(corrplot)
+
+# select numeric variables only
+num_df <- df[, sapply(df, is.numeric)]
+
+# correlation matrix
+corr_mat <- cor(num_df, use = "pairwise.complete.obs")
+
+# plot
+corrplot(corr_mat, method = "color", type = "upper",
+         tl.col = "black", tl.cex = 0.8,
+         title = "Correlation Heatmap of Numeric Variables")
+
+```
+
+```{r}
+# --- Correlation of continuous variables with Diagnosis ---
+library(dplyr)
+
+# Ensure Diagnosis is numeric 0/1 for correlation
+dx_num <- if (is.factor(df$Diagnosis)) {
+  as.numeric(df$Diagnosis == "Yes")
+} else {
+  as.numeric(df$Diagnosis)
+}
+
+# Continuous variables to test
+cont_vars <- c("Age", "BMI", "AlcoholConsumption", "PhysicalActivity", 
+               "DietQuality", "SleepQuality", "SystolicBP", "DiastolicBP",
+               "CholesterolTotal", "CholesterolLDL", "CholesterolHDL",
+               "CholesterolTriglycerides", "MMSE",
+               "FunctionalAssessment", "ADL")
+
+# Compute correlations (point-biserial = Pearson with binary outcome)
+cor_results <- sapply(cont_vars, function(v) {
+  if (all(is.na(df[[v]]))) {
+    return(NA_real_)
+  } else {
+    return(cor(df[[v]], dx_num, use = "pairwise.complete.obs"))
+  }
+})
+
+# Create a tidy results table
+cor_table <- data.frame(
+  Variable = cont_vars,
+  Correlation = cor_results
+) |>
+  arrange(desc(abs(Correlation)))
+
+# Print correlation table
+print(cor_table)
+
+# --- Visualization ---
+bar_cols <- ifelse(cor_table$Correlation > 0, "steelblue", "tomato")
+
+barplot(cor_table$Correlation,
+        names.arg = cor_table$Variable,
+        las = 2, col = bar_cols,
+        main = "Correlation of Continuous Variables with Alzheimer's Diagnosis",
+        ylab = "Correlation coefficient", cex.names = 0.8)
+abline(h = 0, lty = 2)
+
+```
+
+“Correlation doesn’t equal predictive power; this is just linear association.”
+
+```{r}
+# run PCA on scaled numeric vars
+pca_res <- prcomp(num_df, center = TRUE, scale. = TRUE)
+
+# summary of explained variance
+summary(pca_res)
+
+# scree plot (variance explained per PC)
+plot(pca_res, type = "l", main = "Scree Plot")
+
+```
+
+```{r}
+# --- Step 1: run PCA on numeric variables ---
+num_df <- df[, sapply(df, is.numeric)]
+num_df$PatientID <- NULL   # drop ID if still present
+num_df$Diagnosis <- NULL   # drop outcome before PCA
+
+pca_res <- prcomp(num_df, center = TRUE, scale. = TRUE)
+
+# --- Step 2: PCA summary + scree plot ---
+summary(pca_res)
+plot(pca_res, type = "l", main = "Scree Plot")
+
+# --- Step 3: biplot with Diagnosis overlay ---
+library(ggplot2)
+
+# Make Diagnosis a factor with nice labels
+pca_df <- data.frame(pca_res$x,
+                     Diagnosis = factor(df$Diagnosis,
+                                        levels = c(0,1),
+                                        labels = c("No AD","AD")))
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Diagnosis)) +
+  geom_point(alpha = 0.6, size = 2) +
+  theme_minimal() +
+  scale_color_manual(values = c("No AD" = "#E69F00",   # orange
+                                "AD"    = "#56B4E9")) + # blue
+  labs(title = "PCA: PC1 vs PC2",
+       subtitle = "Colored by Alzheimer's Diagnosis",
+       color = "Diagnosis")
+
+# --- Step 4: loadings (variable contributions) ---
+loadings <- as.data.frame(pca_res$rotation)
+loadings$Variable <- rownames(loadings)
+
+top_PC1 <- loadings[order(abs(loadings$PC1), decreasing = TRUE), c("Variable","PC1")][1:10,]
+top_PC2 <- loadings[order(abs(loadings$PC2), decreasing = TRUE), c("Variable","PC2")][1:10,]
+
+print("Top contributors to PC1:")
+print(top_PC1)
+
+print("Top contributors to PC2:")
+print(top_PC2)
+
+# Visualize loadings as barplots
+ggplot(top_PC1, aes(x = reorder(Variable, PC1), y = PC1)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top 10 variable loadings on PC1", x = NULL, y = "Loading")
+
+ggplot(top_PC2, aes(x = reorder(Variable, PC2), y = PC2)) +
+  geom_col(fill = "tomato") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top 10 variable loadings on PC2", x = NULL, y = "Loading")
+
+
+
+```
+
+```{r}
+library(ggplot2)
+
+# extract scores for first 2 PCs
+pca_df <- as.data.frame(pca_res$x[,1:2])
+pca_df$Diagnosis <- df$Diagnosis
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Diagnosis)) +
+  geom_point(alpha = 0.7) +
+  labs(title = "PCA of Patients (PC1 vs PC2)") +
+  theme_minimal()
+
+```
+
+```{r}
+library(ggplot2)
+ggplot(df, aes(x = factor(Diagnosis, labels=c("No AD","AD")), y = MMSE, fill = factor(Diagnosis))) +
+  geom_boxplot(alpha=0.6) +
+  scale_fill_manual(values=c("#E69F00","#56B4E9")) +
+  theme_minimal() +
+  labs(x="Diagnosis", y="MMSE Score", title="MMSE by Diagnosis")
+
+```
+
+```{r}
+ggplot(df, aes(x = factor(Diagnosis, labels=c("No AD","AD")), fill = factor(Smoking))) +
+  geom_bar(position="fill") +
+  scale_fill_manual(values=c("grey70","darkred"), labels=c("Non-smoker","Smoker")) +
+  labs(y="Proportion", x="Diagnosis", fill="Smoking") +
+  theme_minimal()
+
+```
+
+```{r}
+# --- Symptom heatmap by Diagnosis ---
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Select symptom columns
+symptom_vars <- c("MemoryComplaints", "BehavioralProblems", "Confusion",
+                  "Disorientation", "PersonalityChanges",
+                  "DifficultyCompletingTasks", "Forgetfulness")
+
+# Calculate proportions of patients with each symptom by diagnosis
+symptom_summary <- df %>%
+  group_by(Diagnosis) %>%
+  summarise(across(all_of(symptom_vars), ~ mean(.x, na.rm = TRUE))) %>%
+  pivot_longer(-Diagnosis, names_to = "Symptom", values_to = "Proportion")
+
+# Convert Diagnosis to labels
+symptom_summary$Diagnosis <- factor(symptom_summary$Diagnosis,
+                                    levels = c(0, 1),
+                                    labels = c("No AD", "AD"))
+
+# Plot heatmap
+ggplot(symptom_summary, aes(x = Symptom, y = Diagnosis, fill = Proportion)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "white", high = "darkred") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+  labs(title = "Symptom prevalence by Diagnosis",
+       x = "Symptom", y = "Diagnosis", fill = "Proportion")
+
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Pick continuous variables of interest
+cont_vars <- c("BMI", "AlcoholConsumption", "PhysicalActivity", 
+               "DietQuality", "SleepQuality", 
+               "SystolicBP", "DiastolicBP", 
+               "CholesterolTotal", "CholesterolLDL", 
+               "CholesterolHDL", "CholesterolTriglycerides")
+
+# Reshape to long format
+df_long <- df %>%
+  select(Diagnosis, all_of(cont_vars)) %>%
+  pivot_longer(-Diagnosis, names_to = "Variable", values_to = "Value")
+
+# Turn Diagnosis into labels
+df_long$Diagnosis <- factor(df_long$Diagnosis,
+                            levels = c(0,1),
+                            labels = c("No AD","AD"))
+
+# Faceted boxplots
+ggplot(df_long, aes(x = Diagnosis, y = Value, fill = Diagnosis)) +
+  geom_boxplot(alpha = 0.6, outlier.size = 0.8) +
+  scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 3) +
+  theme_minimal() +
+  labs(title = "Continuous Variables by Diagnosis",
+       x = "Diagnosis", y = "Value", fill = "Diagnosis")
+
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Cognitive/functional variables
+cog_vars <- c("MMSE", "FunctionalAssessment", "ADL")
+
+# Reshape to long format
+df_cog <- df %>%
+  select(Diagnosis, all_of(cog_vars)) %>%
+  pivot_longer(-Diagnosis, names_to = "Variable", values_to = "Value")
+
+# Turn Diagnosis into labels
+df_cog$Diagnosis <- factor(df_cog$Diagnosis,
+                           levels = c(0,1),
+                           labels = c("No AD","AD"))
+
+# Faceted boxplots
+ggplot(df_cog, aes(x = Diagnosis, y = Value, fill = Diagnosis)) +
+  geom_boxplot(alpha = 0.6, outlier.size = 0.8) +
+  scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 3) +
+  theme_minimal() +
+  labs(title = "Cognitive and Functional Scores by Diagnosis",
+       x = "Diagnosis", y = "Score", fill = "Diagnosis")
+
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Cognitive/functional variables
+cog_vars <- c("MMSE", "FunctionalAssessment", "ADL")
+
+# Reshape to long format
+df_cog <- df %>%
+  select(Diagnosis, all_of(cog_vars)) %>%
+  pivot_longer(-Diagnosis, names_to = "Variable", values_to = "Value")
+
+# Turn Diagnosis into labels
+df_cog$Diagnosis <- factor(df_cog$Diagnosis,
+                           levels = c(0,1),
+                           labels = c("No AD","AD"))
+
+# Calculate group medians
+meds <- df_cog %>%
+  group_by(Diagnosis, Variable) %>%
+  summarise(median_val = median(Value, na.rm = TRUE), .groups = "drop")
+
+# Faceted boxplots with medians annotated
+ggplot(df_cog, aes(x = Diagnosis, y = Value, fill = Diagnosis)) +
+  geom_boxplot(alpha = 0.6, outlier.size = 0.8) +
+  geom_text(data = meds,
+            aes(x = Diagnosis, y = median_val, 
+                label = round(median_val, 1)),
+            color = "black", vjust = -0.7, size = 3.5,
+            inherit.aes = FALSE) +
+  scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 3) +
+  theme_minimal() +
+  labs(title = "Cognitive and Functional Scores by Diagnosis",
+       subtitle = "Medians annotated above each box",
+       x = "Diagnosis", y = "Score", fill = "Diagnosis")
+
+```
+
+```{r}
+# Define cut-offs for each variable
+cutoffs <- data.frame(
+  Variable = c("MMSE", "FunctionalAssessment", "ADL"),
+  cutoff = c(24, 7, 7)
+)
+
+ggplot(df_cog, aes(x = Diagnosis, y = Value, fill = Diagnosis)) +
+  geom_boxplot(alpha = 0.6, outlier.size = 0.8) +
+  geom_text(data = meds,
+            aes(x = Diagnosis, y = median_val,
+                label = round(median_val, 1)),
+            color = "black", vjust = -0.7, size = 3.5,
+            inherit.aes = FALSE) +
+  geom_hline(data = cutoffs, aes(yintercept = cutoff),
+             linetype = "dashed", color = "red") +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 3) +
+  scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
+  theme_minimal() +
+  labs(title = "Cognitive and Functional Scores by Diagnosis",
+       subtitle = "Red dashed line = clinical cut-off for impairment",
+       x = "Diagnosis", y = "Score", fill = "Diagnosis")
+
+```
+
+```{r}
+library(ggplot2)
+
+# Make a labelled Diagnosis variable
+df$DiagnosisLabel <- factor(df$Diagnosis,
+                            levels = c(0,1),
+                            labels = c("No AD", "AD"))
+
+# Density plot of MMSE with shaded normal range
+ggplot(df, aes(x = MMSE, fill = DiagnosisLabel)) +
+  # Shaded region for normal cognition
+  annotate("rect", xmin = 25, xmax = 30, ymin = 0, ymax = Inf,
+           alpha = 0.2, fill = "grey70") +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
+  theme_minimal() +
+  labs(title = "Distribution of MMSE Scores",
+       subtitle = "Shaded area = normal cognition (≥25)",
+       x = "MMSE Score", y = "Density", fill = "Diagnosis")
+
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Add Diagnosis labels
+df$DiagnosisLabel <- factor(df$Diagnosis,
+                            levels = c(0,1),
+                            labels = c("No AD", "AD"))
+
+# Define cut-offs for each test
+cutoffs <- data.frame(
+  Variable = c("MMSE", "ADL", "FunctionalAssessment"),
+  cutoff_low = c(25, 7, 7),   # clinical cut-off
+  cutoff_high = c(30, 10, 10) # max possible
+)
+
+# Reshape data
+df_long <- df %>%
+  select(DiagnosisLabel, MMSE, ADL, FunctionalAssessment) %>%
+  pivot_longer(-DiagnosisLabel, names_to = "Variable", values_to = "Value")
+
+# Merge cutoffs into long data for plotting
+df_long <- left_join(df_long, cutoffs, by = "Variable")
+
+# Plot densities with shaded cutoff regions
+ggplot(df_long, aes(x = Value, fill = DiagnosisLabel)) +
+  geom_density(alpha = 0.5) +
+  geom_rect(aes(xmin = cutoff_low, xmax = cutoff_high, ymin = 0, ymax = Inf),
+            fill = "grey70", alpha = 0.2, inherit.aes = FALSE) +
+  facet_wrap(~ Variable, scales = "free", ncol = 1) +
+  scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
+  theme_minimal() +
+  labs(title = "Distributions of Cognitive and Functional Scores",
+       subtitle = "Shaded areas = normal / unimpaired ranges",
+       x = "Score", y = "Density", fill = "Diagnosis")
+
+```
+
+```{r}
+library(dplyr)
+library(caret)
+library(ggplot2)
+
+# --- Step 1: Select predictors and outcome properly ---
+data_model <- df %>%
+  select(-PatientID, -DiagnosisLabel)
+
+# Make Diagnosis a factor (outcome)
+data_model$Diagnosis <- factor(data_model$Diagnosis, levels = c(0,1), labels = c("No AD","AD"))
+
+# Separate predictors and outcome
+predictors <- data_model %>% select(-Diagnosis)
+outcome <- data_model$Diagnosis
+
+# --- Step 2: Train/test split ---
+set.seed(123)
+trainIndex <- createDataPartition(outcome, p = 0.7, list = FALSE)
+trainData <- data_model[trainIndex, ]
+testData  <- data_model[-trainIndex, ]
+
+# --- Step 3: Fit logistic regression with caret ---
+fit_glm <- train(Diagnosis ~ ., data = trainData,
+                 method = "glm", family = "binomial",
+                 trControl = trainControl(method = "cv", number = 5))
+
+# --- Step 4: Variable importance ---
+var_imp <- varImp(fit_glm, scale = TRUE)
+
+# Convert to dataframe for plotting
+var_imp_df <- data.frame(Variable = rownames(var_imp$importance),
+                         Importance = var_imp$importance$Overall)
+
+# Keep top 15 variables
+top_imp <- var_imp_df %>%
+  arrange(desc(Importance)) %>%
+  head(15)
+
+# --- Step 5: Plot ---
+ggplot(top_imp, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top predictors of Alzheimer's (Logistic Regression)",
+       x = NULL, y = "Importance (scaled)")
+
+```
+
+```{r}
 sapply(df, class)
 ```
 
 ```{r}
+library(dplyr)
+library(caret)
+library(ggplot2)
+
+# --- Step 1: Ensure categorical variables are factors ---
 df$Gender <- factor(df$Gender, levels = c(0,1), labels = c("Male","Female"))
 df$Ethnicity <- factor(df$Ethnicity, levels = c(0,1,2,3),
                        labels = c("Caucasian","African American","Asian","Other"))
@@ -228,11 +714,131 @@ df$Disorientation <- factor(df$Disorientation, levels = c(0,1), labels = c("No",
 df$PersonalityChanges <- factor(df$PersonalityChanges, levels = c(0,1), labels = c("No","Yes"))
 df$DifficultyCompletingTasks <- factor(df$DifficultyCompletingTasks, levels = c(0,1), labels = c("No","Yes"))
 df$Forgetfulness <- factor(df$Forgetfulness, levels = c(0,1), labels = c("No","Yes"))
-df$Diagnosis <- factor(df$Diagnosis, levels = c(0,1), labels = c("No","Yes"))
+
+# Outcome (only keep one encoding!)
+df$Diagnosis <- factor(df$Diagnosis, levels = c(0,1), labels = c("No AD","AD"))
+df$DiagnosisLabel <- NULL   # remove duplicate outcome label if it exists
+
+# --- Step 2: Clean modeling dataset ---
+data_model <- df %>% select(-PatientID)
+
+# --- Step 3: Train/test split ---
+set.seed(123)
+trainIndex <- createDataPartition(data_model$Diagnosis, p = 0.7, list = FALSE)
+trainData <- data_model[trainIndex, ]
+testData  <- data_model[-trainIndex, ]
+
+# --- Step 4: Fit logistic regression ---
+fit_glm <- train(Diagnosis ~ ., data = trainData,
+                 method = "glm", family = "binomial",
+                 trControl = trainControl(method = "cv", number = 5))
+
+# --- Step 5: Variable importance ---
+var_imp <- varImp(fit_glm, scale = TRUE)
+var_imp_df <- data.frame(Variable = rownames(var_imp$importance),
+                         Importance = var_imp$importance$Overall)
+
+top_imp <- var_imp_df %>% arrange(desc(Importance)) %>% head(15)
+
+ggplot(top_imp, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top predictors of Alzheimer's (Logistic Regression)",
+       x = NULL, y = "Importance (scaled)")
+
+# --- Step 6: Model evaluation on test data ---
+preds <- predict(fit_glm, newdata = testData)
+conf_mat <- confusionMatrix(preds, testData$Diagnosis)
+print(conf_mat)
+
+```
+
+```{r}
+library(pROC)
+
+# --- ROC curve for test data ---
+# Get predicted probabilities instead of classes
+probs <- predict(fit_glm, newdata = testData, type = "prob")
+
+# caret puts probabilities in columns by class → we want "AD"
+roc_obj <- roc(response = testData$Diagnosis,
+               predictor = probs$AD,
+               levels = rev(levels(testData$Diagnosis)))
+
+# Plot ROC curve
+plot(roc_obj, col = "steelblue", lwd = 2, main = "ROC Curve for Alzheimer's Prediction")
+abline(a = 0, b = 1, lty = 2, col = "grey")
+
+# Print AUC
+auc(roc_obj)
+
+```
+
+```{r}
+library(caret)
+library(pROC)
+
+# --- Step 1: Define groups of variables ---
+clinical_vars <- c("MMSE", "ADL", "FunctionalAssessment", 
+                   "MemoryComplaints", "BehavioralProblems", 
+                   "Confusion", "Disorientation", 
+                   "PersonalityChanges", "DifficultyCompletingTasks", 
+                   "Forgetfulness")
+
+# risk factors = everything except PatientID, DoctorInCharge, Diagnosis, and clinical vars
+risk_vars <- setdiff(names(df), c("PatientID", "DoctorInCharge", "DiagnosisLabel", "Diagnosis", clinical_vars))
+
+# --- Step 2: Ensure outcome is a factor with 2 levels ---
+df$Diagnosis <- factor(df$Diagnosis, levels = c("No AD","AD"))
+
+# --- Step 3: Train/test split (stratified) ---
+set.seed(123)
+trainIndex <- createDataPartition(df$Diagnosis, p = 0.7, list = FALSE)
+trainData <- df[trainIndex, ]
+testData  <- df[-trainIndex, ]
+
+# --- Step 4: Drop zero-variance predictors in training set ---
+risk_vars_filtered <- risk_vars[sapply(trainData[, risk_vars], function(x) length(unique(x)) > 1)]
+
+# --- Step 5: Build logistic regression formula ---
+risk_formula <- as.formula(paste("Diagnosis ~", paste(risk_vars_filtered, collapse = " + ")))
+
+# --- Step 6: Fit logistic regression (risk factors only) ---
+risk_model <- glm(risk_formula, data = trainData, family = binomial)
+
+# --- Step 7: Predictions on test set ---
+pred_probs <- predict(risk_model, newdata = testData, type = "response")
+pred_class <- ifelse(pred_probs > 0.5, "AD", "No AD")
+pred_class <- factor(pred_class, levels = levels(df$Diagnosis))
+
+# --- Step 8: Confusion matrix ---
+conf_matrix <- confusionMatrix(pred_class, testData$Diagnosis)
+print(conf_matrix)
+
+# --- Step 9: ROC curve + AUC ---
+roc_res <- roc(testData$Diagnosis, pred_probs, levels = c("No AD","AD"))
+plot(roc_res, col = "darkorange", lwd = 2,
+     main = "ROC Curve (Risk Factors Only)")
+auc(roc_res)
+
+
+
 ```
 
 ```{r}
 sapply(df, class)
+```
+
+```{r}
+plot(roc_full, col = "steelblue", lwd = 2, main = "ROC: Full vs Risk-Only",
+     legacy.axes = TRUE)   # makes x-axis 1-Specificity (FPR)
+plot(roc_risk, add = TRUE, col = "darkorange", lwd = 2, lty = 2)
+
+legend("bottomright",
+       legend = c(paste0("Full (AUC=", round(auc(roc_full),3),")"),
+                  paste0("Risk-only (AUC=", round(auc(roc_risk),3),")")),
+       col = c("steelblue","darkorange"), lwd = 2, lty = c(1,2), bty = "n")
 ```
 
 ```{r}
