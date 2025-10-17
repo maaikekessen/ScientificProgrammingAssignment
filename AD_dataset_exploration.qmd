@@ -53,3 +53,74 @@ print(colSums(is.na(df)))
 cat("----- Summary statistics -----\n")
 print(summary(df, maxsum = 10))
 ```
+
+## Define variable blocks 
+
+In the code below, I define some blocks that are used later in the analysis, therefore getting rid of redundancies.
+
+```{r}
+cognitive_vars <- c("MMSE", "ADL", "FunctionalAssessment")
+clinical_vars  <- c("Age", "Gender", "Hypertension", "Diabetes", "Depression")
+lifestyle_vars <- c("PhysicalActivity", "DietQuality", "SleepQuality", "AlcoholConsumption")
+symptom_vars   <- c("MemoryComplaints", "BehavioralProblems", "Confusion",
+                    "Disorientation", "PersonalityChanges", "Forgetfulness",
+                    "DifficultyCompletingTasks")
+
+#create a named list for easy iteration in later analyses
+blocks <- list(
+  Cognitive  = cognitive_vars,
+  Clinical   = clinical_vars,
+  Lifestyle  = lifestyle_vars,
+  Symptoms   = symptom_vars
+)
+```
+
+## Exploratory Data Visualization: Boxplots and Barplots
+
+In this section, I provide a first visualexploration of the dataset.
+
+-   Boxplots for numeric variables help assess their distribution and identify potential outliers.
+
+-   Barplots for categorical variables give an overview of class balance and category frequencies.
+
+Together, these visual checks confirm that the dataset is well-structured and suitable for statistical modeling.
+
+```{r}
+#numeric variables: boxplots 
+numeric_vars <- c("Age", "BMI", "AlcoholConsumption", "PhysicalActivity",
+                  "DietQuality", "SleepQuality", "SystolicBP", "DiastolicBP",
+                  "CholesterolTotal", "CholesterolLDL", "CholesterolHDL",
+                  "CholesterolTriglycerides", "MMSE", "FunctionalAssessment", "ADL")
+
+#only keep variables that exist in the dataset
+numeric_vars <- intersect(numeric_vars, names(df))
+
+#create boxplots to inspect distributions and detect potential outliers
+for (var in numeric_vars) {
+  boxplot(df[[var]],
+          main = paste("Boxplot of", var),
+          ylab = var,
+          col = "lightblue",
+          border = "gray40")
+}
+
+#categorical variables: barplots 
+cat_vars <- c("Gender", "Ethnicity", "EducationLevel", "Smoking",
+              "FamilyHistoryAlzheimers", "CardiovascularDisease", "Diabetes",
+              "Depression", "HeadInjury", "Hypertension", "MemoryComplaints",
+              "BehavioralProblems", "Confusion", "Disorientation", "PersonalityChanges",
+              "DifficultyCompletingTasks", "Forgetfulness", "Diagnosis")
+
+#only include columns that exist in the dataset
+cat_vars <- intersect(cat_vars, names(df))
+
+#create barplots to visualize class balance and categorical distributions
+for (var in cat_vars) {
+  barplot(table(df[[var]]),
+          main = paste("Barplot of", var),
+          xlab = var,
+          ylab = "Count",
+          col = "lightgreen",
+          border = "gray40")
+}
+```
