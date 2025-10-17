@@ -1,0 +1,32 @@
+---
+title: "AD_dataset_cleaning"
+format: html
+author: "Maaike Kessen"
+editor: visual
+---
+
+# Alzheimer’s disease analysis: data cleaning
+
+## Data import and initial inspection
+
+In this section, I load and inspect the Alzheimer’s dataset.\
+All potential NA representations are standardized to proper `NA` values, to make sure everything stays consistent.\
+The `str()` command helps verify variable types. `colSums(is.na())` and `summary()` provide an overview of missing data and basic descriptive statistics.
+
+```{r}
+#set the working directory
+#(change this path to match your local device)
+setwd("C:/Users/Maaike/Documents/uni/scientific programming/assignment/ScientificProgrammingAssignment")
+
+#load the Alzheimer's dataset
+# - use ";" as the separator
+# - convert various NA indicators (NaN, N/A, blanks) into proper NA values
+# - ensure decimals are correctly interpreted
+df <- read.csv(
+  "alzheimers_disease_data.csv",
+  sep = ";",
+  header = TRUE,
+  na.strings = c("NaN", "nan", "Nan", "NA", "N/A", "", " "),
+  dec = "."
+)
+```
