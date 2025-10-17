@@ -113,3 +113,56 @@ df$DoctorInCharge <- NULL
 #verify corrected value ranges for numeric variables
 sapply(df[names(ranges)], function(x) range(x, na.rm = TRUE))
 ```
+
+## Data validation after cleaning
+
+```{r}
+#inspect the data structure again to verify that:
+# - numeric variables are properly formatted as numeric
+# - factor variables remain categorical
+# - implausible or out-of-range values were corrected
+str(df)
+
+#check for missing values after cleaning
+cat("------------------------------------------------------------\n")
+cat("Missing values per column:\n")
+print(colSums(is.na(df)))
+
+#display updated descriptive statistics for all variables
+cat("------------------------------------------------------------\n")
+cat("Summary statistics:\n")
+print(summary(df))
+```
+
+## Outlier detection
+
+In this section, I detect potential outliers by checking whether values fall outside the expected ranges defined earlier.\
+For each numeric variable, the code returns the patient ID and the variable where the issue occurred.
+
+```{r}
+#the function below is used to identify out-of-range values
+#returns the Patient ID, variable name, and the offending value
+find_outliers <- function(df, var, min_val, max_val) {
+  bad_rows <- which(df[[var]] < min_val | df[[var]] > max_val)
+  if (length(bad_rows) > 0) {
+    data.frame(
+      PatientID = df$PatientID[bad_rows],
+      Variable = var,
+      Value = df[[var]][bad_rows],
+      Row = bad_rows
+    )
+  } else {
+    NULL
+  }
+}
+
+#apply the outlier detection function across all previously defined ranges
+outlier_report <- do.call(
+  rbind,
+  lapply(names(ranges), function(v)
+    find_outliers(df, v, ranges[[v]][1], ranges[[v]][2]))
+)
+
+#display rows containing out-of-range values
+outlier_report
+```
