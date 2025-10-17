@@ -204,4 +204,46 @@ for (col in names(df)) {
 colSums(is.na(df))
 ```
 
-## 
+## Convert categorical variables into factors with descriptive labels
+
+In this step, I convert all categorical variables into factors with meaningful labels, improving readability and and making sure the data is compatible with R’s modeling functions.
+
+Many variables in the dataset were encoded as numeric 0/1 indicators.\
+By converting these to factors with `"Yes"`/`"No"` labels, I preserve their categorical nature and make visualizations and model outputs more interpretable.
+
+Similarly, demographic variables are converted into labeled factors for better understanding.\
+Finally, the *Diagnosis* variable is renamed to `"No AD"` / `"AD"` to clearly reflect Alzheimer’s status in subsequent analyses.
+
+```{r}
+#convert demographic and educational variables
+if ("Gender" %in% names(df))
+  df$Gender <- factor(df$Gender, levels = c(0, 1), labels = c("Male", "Female"))
+
+if ("Ethnicity" %in% names(df))
+  df$Ethnicity <- factor(df$Ethnicity, levels = c(0, 1, 2, 3),
+                         labels = c("Caucasian", "African American", "Asian", "Other"))
+
+if ("EducationLevel" %in% names(df))
+  df$EducationLevel <- factor(df$EducationLevel, levels = 0:3,
+                              labels = c("None", "High School", "Bachelor", "Higher"))
+
+#convert all binary clinical and symptom-related variables (0/1) into factors
+bin_vars <- c("Smoking", "FamilyHistoryAlzheimers", "CardiovascularDisease", "Diabetes", "Depression",
+              "HeadInjury", "Hypertension", "MemoryComplaints", "BehavioralProblems", "Confusion",
+              "Disorientation", "PersonalityChanges", "DifficultyCompletingTasks", "Forgetfulness", "Diagnosis")
+
+#only convert variables that exist in the dataset
+bin_vars <- intersect(bin_vars, names(df))
+
+for (v in bin_vars) {
+  df[[v]] <- factor(df[[v]], levels = c(0, 1), labels = c("No", "Yes"))
+}
+
+#adjust diagnosis lable
+if ("Diagnosis" %in% names(df)) {
+  levels(df$Diagnosis) <- c("No AD", "AD")
+}
+
+#export cleaned dataset
+write.csv(df, output_path, row.names = FALSE)
+```
