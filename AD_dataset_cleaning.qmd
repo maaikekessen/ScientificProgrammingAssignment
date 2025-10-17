@@ -166,3 +166,42 @@ outlier_report <- do.call(
 #display rows containing out-of-range values
 outlier_report
 ```
+
+## Manual correction of outliers
+
+```{r}
+#replace identified corrupted or implausible entries with NA
+df$BMI[df$PatientID == 6792] <- NA
+df$SleepQuality[df$PatientID == 6644] <- NA
+df$CholesterolLDL[df$PatientID == 5186] <- NA
+df$CholesterolTriglycerides[df$PatientID == 6485] <- NA
+df$FunctionalAssessment[df$PatientID == 6423] <- NA
+df$ADL[df$PatientID == 6424] <- NA
+```
+
+## Median imputation for missing numeric variables
+
+In this step, I perform median imputation for all numeric variables.\
+After identifying and setting corrupted or implausible entries to `NA`, missing values are replaced with the median of each respective column.
+
+Using the median (instead of the mean) is particularly appropriate for clinical or biological datasets, because it reduces the influence of extreme values and maintains the central tendency of the data. Furthermore, since there were so little missing values, the effect it has is negligible.
+
+Finally, `colSums(is.na(df))` is used to verify that no missing values remain, ensuring the dataset is complete and ready for statistical analysis and modeling.
+
+```{r}
+#replace missing values in all numeric variables with the median of that variable
+#median imputation is robust to outliers and preserves the overall distribution
+for (col in names(df)) {
+  if (is.numeric(df[[col]])) {
+    if (any(is.na(df[[col]]))) {
+      median_val <- median(df[[col]], na.rm = TRUE)
+      df[[col]][is.na(df[[col]])] <- median_val
+    }
+  }
+}
+
+#verify that no missing values remain in the dataset
+colSums(is.na(df))
+```
+
+## 
