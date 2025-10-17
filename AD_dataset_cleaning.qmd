@@ -41,3 +41,75 @@ print(colSums(is.na(df)))
 cat("----- Summary statistics -----\n")
 print(summary(df, maxsum = 10))
 ```
+
+By investigating the results above, you can see that there are some formatting issues for the numeric variables. Let's fix that first.
+
+## Data cleaning and formatting
+
+In this section, I clean and standardize the dataset’s numeric variables using a function.\
+First, it makes sure that any decimal commas are converted to dots for proper numeric recognition. The function also identifies implausible values and rescales them.
+
+Expected biological ranges are defined for each variable, making sure that all data points fall within realistic clinical limits (based on the range descriptions on provided Kaggle).\
+Finally, I removed the confidential `DoctorInCharge` column, as it contains no analytic value.
+
+```{r}
+#the function below will clean the numeric variables
+# - replaces commas with dots for decimal consistency
+# - converts character values to numeric
+# - corrects implausible values by rescaling
+fix_variable <- function(x, min_val, max_val) {
+  #replace commas with dots for consistent decimal formatting
+  x <- gsub(",", ".", as.character(x))
+  
+  #convert to numeric
+  x <- as.numeric(x)
+  
+  #rescale implausible values 
+  x <- sapply(x, function(val) {
+    if (is.na(val)) return(NA)
+    while (val > max_val) {
+      val <- val / 10
+    }
+    return(val)
+  })
+  
+  return(as.numeric(x))
+}
+
+#define expected valid ranges for all numeric variables
+#these thresholds are based on the ranges given on Kaggle, where the dataset is downloaded from
+ranges <- list(
+  Age = c(60, 90),
+  BMI = c(15, 40),
+  AlcoholConsumption = c(0, 20),
+  PhysicalActivity = c(0, 10),
+  DietQuality = c(0, 10),
+  SleepQuality = c(4, 10),
+  SystolicBP = c(90, 180),
+  DiastolicBP = c(60, 120),
+  CholesterolTotal = c(150, 300),
+  CholesterolLDL = c(50, 200),
+  CholesterolHDL = c(20, 100),
+  CholesterolTriglycerides = c(50, 400),
+  MMSE = c(0, 30),
+  FunctionalAssessment = c(0, 10),
+  ADL = c(0, 10)
+)
+
+#apply cleaning function across all defined numeric variables
+for (var in names(ranges)) {
+  if (var %in% names(df)) {
+    df[[var]] <- fix_variable(
+      df[[var]],
+      min_val = ranges[[var]][1],
+      max_val = ranges[[var]][2]
+    )
+  }
+}
+
+#remove DoctorInCharge column as it contains no usable information
+df$DoctorInCharge <- NULL
+
+#verify corrected value ranges for numeric variables
+sapply(df[names(ranges)], function(x) range(x, na.rm = TRUE))
+```
