@@ -1,0 +1,55 @@
+---
+title: "AD_dataset_exploration"
+format: html
+author: "Maaike Kessen"
+editor: visual
+---
+
+# Alzheimer’s disease analysis: data exploration
+
+```{r}
+#list all required packages
+packages <- c(
+  "ggplot2", "caret", "tidyverse", "dplyr",
+  "pROC", "broom", "gt", "randomForest", "glmnet"
+)
+
+#check which are not installed and install them automatically
+installed <- packages %in% rownames(installed.packages())
+if (any(!installed)) {
+  cat("Installing missing packages:\n")
+  install.packages(packages[!installed], dependencies = TRUE)
+}
+
+#load all packages
+invisible(lapply(packages, library, character.only = TRUE))
+```
+
+```{r}
+#set the working directory
+#(change this path to match your local device)
+setwd("C:/Users/Maaike/Documents/uni/scientific programming/assignment/ScientificProgrammingAssignment")
+
+#load the Alzheimer's dataset
+# - use ";" as the separator
+# - convert various NA indicators (NaN, N/A, blanks) into proper NA values
+# - ensure decimals are correctly interpreted
+df <- read.csv(
+  "cleaned_alzheimers_dataset.csv",
+  sep = ";",
+  header = TRUE,
+  na.strings = c("NaN", "nan", "Nan", "NA", "N/A", "", " "),
+  dec = "."
+)
+
+#inspect the dataset structure: variable types and first few entries
+str(df)
+
+#check for missing values per column
+cat("----- Missing values per column -----\n")
+print(colSums(is.na(df)))
+
+#display descriptive summary statistics for all variables
+cat("----- Summary statistics -----\n")
+print(summary(df, maxsum = 10))
+```
