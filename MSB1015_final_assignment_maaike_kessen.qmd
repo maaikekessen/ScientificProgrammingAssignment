@@ -5,48 +5,101 @@ format: html
 editor: visual
 ---
 
+# Alzheimer’s disease analysis: data cleaning, exploration & modeling
+
+This notebook investigates factors contributing to Alzheimer’s Disease (AD) using a structured dataset of clinical, cognitive, lifestyle, and symptom-related variables.
+
+The main goals are to:
+
+-   Clean and preprocess the dataset for analysis.
+
+-   Explore patterns and relationships between features and AD diagnosis.
+
+-   Evaluate predictive performance across different variable groups (*multiblock analysis*).
+
+-   Build interpretable models (logistic regression, random forest, and elastic net) to identify key predictors.
+
 ## Load libraries
 
-## Set working directory and load data set
-
 ```{r}
-#set working directory
-setwd("C:/Users/Maaike/Documents/uni/scientific programming/assignment/ScientificProgrammingAssignment")
+#list all required packages
+packages <- c(
+  "ggplot2", "caret", "tidyverse", "dplyr",
+  "pROC", "broom", "gt", "randomForest", "glmnet"
+)
 
-#load the data
-#convert all different NA options into a proper NA
-df <- read.csv("alzheimers_disease_data.csv", sep = ";", header = TRUE,
-               na.strings = c("NaN", "nan", "Nan", "NA", "N/A", ""))
+#check which are not installed and install them automatically
+installed <- packages %in% rownames(installed.packages())
+if (any(!installed)) {
+  cat("Installing missing packages:\n")
+  install.packages(packages[!installed], dependencies = TRUE)
+}
 
-#inspect the data
-str(df)
+#load all packages
+invisible(lapply(packages, library, character.only = TRUE))
 
-print("--------------------------------------------------------------------------------------")
-print("missing values:")
-colSums(is.na(df)) #count missing values
-
-print("--------------------------------------------------------------------------------------")
-print("summary:")
-summary(df)
+#set global seed 
+set.seed(123)
 ```
 
-By investigating the results above, you can see that there are some formatting issues for the numeric variables.
+## Data import and initial inspection
 
-## Fix the variables
-
-The block below tackles the formatting issues in the variables.
-
-I also decided to drop the DoctorInCharge variable, as it is of no use to me.
+In this section, I load and inspect the Alzheimer’s dataset.\
+All potential NA representations are standardized to proper `NA` values, to make sure everything stays consistent.\
+The `str()` command helps verify variable types. `colSums(is.na())` and `summary()` provide an overview of missing data and basic descriptive statistics.
 
 ```{r}
-# function to clean numeric variables with commas and out-of-range values
+#set the working directory
+#(change this path to match your local device)
+setwd("C:/Users/Maaike/Documents/uni/scientific programming/assignment/ScientificProgrammingAssignment")
+
+#load the Alzheimer's dataset
+# - use ";" as the separator
+# - convert various NA indicators (NaN, N/A, blanks) into proper NA values
+# - ensure decimals are correctly interpreted
+df <- read.csv(
+  "alzheimers_disease_data.csv",
+  sep = ";",
+  header = TRUE,
+  na.strings = c("NaN", "nan", "Nan", "NA", "N/A", "", " "),
+  dec = "."
+)
+
+#inspect the dataset structure: variable types and first few entries
+str(df)
+
+#check for missing values per column
+cat("----- Missing values per column -----\n")
+print(colSums(is.na(df)))
+
+#display descriptive summary statistics for all variables
+cat("----- Summary statistics -----\n")
+print(summary(df, maxsum = 10))
+```
+
+By investigating the results above, you can see that there are some formatting issues for the numeric variables. Let's fix that first.
+
+## Data cleaning and formatting
+
+In this section, I clean and standardize the dataset’s numeric variables using a function.\
+First, it makes sure that any decimal commas are converted to dots for proper numeric recognition. The function also identifies implausible values and rescales them.
+
+Expected biological ranges are defined for each variable, making sure that all data points fall within realistic clinical limits (based on the range descriptions on provided Kaggle).\
+Finally, I removed the confidential `DoctorInCharge` column, as it contains no analytic value.
+
+```{r}
+#the function below will clean the numeric variables
+# - replaces commas with dots for decimal consistency
+# - converts character values to numeric
+# - corrects implausible values by rescaling
 fix_variable <- function(x, min_val, max_val) {
-  # replace commas with dots
+  #replace commas with dots for consistent decimal formatting
   x <- gsub(",", ".", as.character(x))
-  # convert to numeric
+  
+  #convert to numeric
   x <- as.numeric(x)
   
-  # rescale implausible values (e.g. 250 instead of 25.0)
+  #rescale implausible values 
   x <- sapply(x, function(val) {
     if (is.na(val)) return(NA)
     while (val > max_val) {
@@ -58,7 +111,8 @@ fix_variable <- function(x, min_val, max_val) {
   return(as.numeric(x))
 }
 
-# define expected ranges for ALL numeric variables
+#define expected valid ranges for all numeric variables
+#these thresholds are based on the ranges given on Kaggle, where the dataset is downloaded from
 ranges <- list(
   Age = c(60, 90),
   BMI = c(15, 40),
@@ -77,90 +131,101 @@ ranges <- list(
   ADL = c(0, 10)
 )
 
-# apply the fix function to all variables in ranges
+#apply cleaning function across all defined numeric variables
 for (var in names(ranges)) {
   if (var %in% names(df)) {
-    df[[var]] <- fix_variable(df[[var]],
-                              min_val = ranges[[var]][1],
-                              max_val = ranges[[var]][2])
+    df[[var]] <- fix_variable(
+      df[[var]],
+      min_val = ranges[[var]][1],
+      max_val = ranges[[var]][2]
+    )
   }
 }
 
-# drop confidential column
+#remove DoctorInCharge column as it contains no usable information
 df$DoctorInCharge <- NULL
 
-# check results
+#verify corrected value ranges for numeric variables
 sapply(df[names(ranges)], function(x) range(x, na.rm = TRUE))
-
 ```
 
+## Data validation after cleaning
+
 ```{r}
-#inspect the data
+#inspect the data structure again to verify that:
+# - numeric variables are properly formatted as numeric
+# - factor variables remain categorical
+# - implausible or out-of-range values were corrected
 str(df)
 
-print("--------------------------------------------------------------------------------------")
-print("missing values:")
-colSums(is.na(df)) #count missing values
+#check for missing values after cleaning
+cat("------------------------------------------------------------\n")
+cat("Missing values per column:\n")
+print(colSums(is.na(df)))
 
-print("--------------------------------------------------------------------------------------")
-print("summary:")
-summary(df)
+#display updated descriptive statistics for all variables
+cat("------------------------------------------------------------\n")
+cat("Summary statistics:\n")
+print(summary(df))
 ```
 
-```{r}
-# define expected ranges again
-ranges <- list(
-  BMI = c(15, 40),
-  SleepQuality = c(4, 10),
-  ADL = c(0, 10),
-  MMSE = c(0, 30),
-  FunctionalAssessment = c(0, 10),
-  AlcoholConsumption = c(0, 20),
-  CholesterolTriglycerides = c(50, 400)
-)
+## Outlier detection
 
-# function to find rows with out-of-range values
+In this section, I detect potential outliers by checking whether values fall outside the expected ranges defined earlier.\
+For each numeric variable, the code returns the patient ID and the variable where the issue occurred.
+
+```{r}
+#the function below is used to identify out-of-range values
+#returns the Patient ID, variable name, and the offending value
 find_outliers <- function(df, var, min_val, max_val) {
   bad_rows <- which(df[[var]] < min_val | df[[var]] > max_val)
   if (length(bad_rows) > 0) {
-    return(data.frame(
+    data.frame(
       PatientID = df$PatientID[bad_rows],
       Variable = var,
       Value = df[[var]][bad_rows],
       Row = bad_rows
-    ))
+    )
   } else {
-    return(NULL)
+    NULL
   }
 }
 
-# apply across all defined ranges
-outlier_report <- do.call(rbind,
-                          lapply(names(ranges), function(v) 
-                            find_outliers(df, v, ranges[[v]][1], ranges[[v]][2])))
+#apply the outlier detection function across all previously defined ranges
+outlier_report <- do.call(
+  rbind,
+  lapply(names(ranges), function(v)
+    find_outliers(df, v, ranges[[v]][1], ranges[[v]][2]))
+)
 
+#display rows containing out-of-range values
 outlier_report
 ```
 
+## Manual correction of outliers
+
 ```{r}
-# set the corrupted entries to NA
+#replace identified corrupted or implausible entries with NA
 df$BMI[df$PatientID == 6792] <- NA
 df$SleepQuality[df$PatientID == 6644] <- NA
-df$ADL[df$PatientID == 6424] <- NA
-df$FunctionalAssessment[df$PatientID == 6423] <- NA
+df$CholesterolLDL[df$PatientID == 5186] <- NA
 df$CholesterolTriglycerides[df$PatientID == 6485] <- NA
+df$FunctionalAssessment[df$PatientID == 6423] <- NA
+df$ADL[df$PatientID == 6424] <- NA
 ```
 
-```{r}
-summary(df$BMI)
-summary(df$SleepQuality)
-summary(df$ADL)
-summary(df$FunctionalAssessment)
-summary(df$CholesterolTriglycerides)
-```
+## Median imputation for missing numeric variables
+
+In this step, I perform median imputation for all numeric variables.\
+After identifying and setting corrupted or implausible entries to `NA`, missing values are replaced with the median of each respective column.
+
+Using the median (instead of the mean) is particularly appropriate for clinical or biological datasets, because it reduces the influence of extreme values and maintains the central tendency of the data. Furthermore, since there were so little missing values, the effect it has is negligible.
+
+Finally, `colSums(is.na(df))` is used to verify that no missing values remain, ensuring the dataset is complete and ready for statistical analysis and modeling.
 
 ```{r}
-# median imputation for all numeric columns
+#replace missing values in all numeric variables with the median of that variable
+#median imputation is robust to outliers and preserves the overall distribution
 for (col in names(df)) {
   if (is.numeric(df[[col]])) {
     if (any(is.na(df[[col]]))) {
@@ -170,737 +235,675 @@ for (col in names(df)) {
   }
 }
 
-# check if any NAs remain
+#verify that no missing values remain in the dataset
 colSums(is.na(df))
 ```
 
-```{r}
-numeric_vars <- c("Age", "BMI", "AlcoholConsumption", "PhysicalActivity", 
-                  "DietQuality", "SleepQuality", "SystolicBP", "DiastolicBP", 
-                  "CholesterolTotal", "CholesterolLDL", "CholesterolHDL", 
-                  "CholesterolTriglycerides", "MMSE", 
-                  "FunctionalAssessment", "ADL")
+## Convert categorical variables into factors with descriptive labels
 
-for (var in numeric_vars) {
-  boxplot(df[[var]], main = paste("Boxplot of", var),
-          ylab = var)
+In this step, I convert all categorical variables into factors with meaningful labels, improving readability and and making sure the data is compatible with R’s modeling functions.
+
+Many variables in the dataset were encoded as numeric 0/1 indicators.\
+By converting these to factors with `"Yes"`/`"No"` labels, I preserve their categorical nature and make visualizations and model outputs more interpretable.
+
+Similarly, demographic variables are converted into labeled factors for better understanding.\
+Finally, the *Diagnosis* variable is renamed to `"No AD"` / `"AD"` to clearly reflect Alzheimer’s status in subsequent analyses.
+
+```{r}
+#convert demographic and educational variables
+if ("Gender" %in% names(df))
+  df$Gender <- factor(df$Gender, levels = c(0, 1), labels = c("Male", "Female"))
+
+if ("Ethnicity" %in% names(df))
+  df$Ethnicity <- factor(df$Ethnicity, levels = c(0, 1, 2, 3),
+                         labels = c("Caucasian", "African American", "Asian", "Other"))
+
+if ("EducationLevel" %in% names(df))
+  df$EducationLevel <- factor(df$EducationLevel, levels = 0:3,
+                              labels = c("None", "High School", "Bachelor", "Higher"))
+
+#convert all binary clinical and symptom-related variables (0/1) into factors
+bin_vars <- c("Smoking", "FamilyHistoryAlzheimers", "CardiovascularDisease", "Diabetes", "Depression",
+              "HeadInjury", "Hypertension", "MemoryComplaints", "BehavioralProblems", "Confusion",
+              "Disorientation", "PersonalityChanges", "DifficultyCompletingTasks", "Forgetfulness", "Diagnosis")
+
+#only convert variables that exist in the dataset
+bin_vars <- intersect(bin_vars, names(df))
+
+for (v in bin_vars) {
+  df[[v]] <- factor(df[[v]], levels = c(0, 1), labels = c("No", "Yes"))
 }
 
+#adjust diagnosis lable
+if ("Diagnosis" %in% names(df)) {
+  levels(df$Diagnosis) <- c("No AD", "AD")
+}
+
+#export cleaned dataset
+output_path <- "cleaned_alzheimers_dataset.csv"
+write.csv(df, output_path, row.names = FALSE)
 ```
 
-```{r}
-cat_vars <- c("Gender", "Ethnicity", "EducationLevel", "Smoking",
-              "FamilyHistoryAlzheimers", "CardiovascularDisease",
-              "Diabetes", "Depression", "HeadInjury", "Hypertension",
-              "MemoryComplaints", "BehavioralProblems", "Confusion",
-              "Disorientation", "PersonalityChanges", 
-              "DifficultyCompletingTasks", "Forgetfulness", "Diagnosis")
+## Define variable blocks 
 
-for (var in cat_vars) {
-  barplot(table(df[[var]]), 
-          main = paste("Barplot of", var),
-          xlab = var,
-          ylab = "Count")
-}
+IN the code below, I define some blocks that are used later in the analysis, therefore getting rid of redundancies.
+
+```{r}
+cognitive_vars <- c("MMSE", "ADL", "FunctionalAssessment")
+clinical_vars  <- c("Age", "Gender", "Hypertension", "Diabetes", "Depression")
+lifestyle_vars <- c("PhysicalActivity", "DietQuality", "SleepQuality", "AlcoholConsumption")
+symptom_vars   <- c("MemoryComplaints", "BehavioralProblems", "Confusion",
+                    "Disorientation", "PersonalityChanges", "Forgetfulness",
+                    "DifficultyCompletingTasks")
+
+#create a named list for easy iteration in later analyses
+blocks <- list(
+  Cognitive  = cognitive_vars,
+  Clinical   = clinical_vars,
+  Lifestyle  = lifestyle_vars,
+  Symptoms   = symptom_vars
+)
 ```
 
-```{r}
-# Boxplots for numeric variables
-numeric_vars <- c("Age", "BMI", "AlcoholConsumption", "PhysicalActivity", 
-                  "DietQuality", "SleepQuality", "SystolicBP", "DiastolicBP", 
-                  "CholesterolTotal", "CholesterolLDL", "CholesterolHDL", 
-                  "CholesterolTriglycerides", "MMSE", 
-                  "FunctionalAssessment", "ADL")
+## Exploratory Data Visualization: Boxplots and Barplots
 
+In this section, I provide a first visualexploration of the dataset.
+
+-   Boxplots for numeric variables help assess their distribution and identify potential outliers.
+
+-   Barplots for categorical variables give an overview of class balance and category frequencies.
+
+Together, these visual checks confirm that the dataset is well-structured and suitable for statistical modeling.
+
+```{r}
+#numeric variables: boxplots 
+numeric_vars <- c("Age", "BMI", "AlcoholConsumption", "PhysicalActivity",
+                  "DietQuality", "SleepQuality", "SystolicBP", "DiastolicBP",
+                  "CholesterolTotal", "CholesterolLDL", "CholesterolHDL",
+                  "CholesterolTriglycerides", "MMSE", "FunctionalAssessment", "ADL")
+
+#only keep variables that exist in the dataset
+numeric_vars <- intersect(numeric_vars, names(df))
+
+#create boxplots to inspect distributions and detect potential outliers
 for (var in numeric_vars) {
-  boxplot(df[[var]], main = paste("Boxplot of", var),
-          ylab = var, col = "lightblue")
+  boxplot(df[[var]],
+          main = paste("Boxplot of", var),
+          ylab = var,
+          col = "lightblue",
+          border = "gray40")
 }
 
-# Barplots for categorical variables
+#categorical variables: barplots 
 cat_vars <- c("Gender", "Ethnicity", "EducationLevel", "Smoking",
-              "FamilyHistoryAlzheimers", "CardiovascularDisease",
-              "Diabetes", "Depression", "HeadInjury", "Hypertension",
-              "MemoryComplaints", "BehavioralProblems", "Confusion",
-              "Disorientation", "PersonalityChanges", 
+              "FamilyHistoryAlzheimers", "CardiovascularDisease", "Diabetes",
+              "Depression", "HeadInjury", "Hypertension", "MemoryComplaints",
+              "BehavioralProblems", "Confusion", "Disorientation", "PersonalityChanges",
               "DifficultyCompletingTasks", "Forgetfulness", "Diagnosis")
 
+#only include columns that exist in the dataset
+cat_vars <- intersect(cat_vars, names(df))
+
+#create barplots to visualize class balance and categorical distributions
 for (var in cat_vars) {
   barplot(table(df[[var]]),
           main = paste("Barplot of", var),
-          xlab = var, ylab = "Count", col = "lightgreen")
+          xlab = var,
+          ylab = "Count",
+          col = "lightgreen",
+          border = "gray40")
 }
-
 ```
 
-```{r}
-for (var in numeric_vars) {
-  boxplot(df[[var]] ~ df$Diagnosis,
-          main = paste("Boxplot of", var, "by Diagnosis"),
-          xlab = "Diagnosis", ylab = var, col = c("orange","lightblue"))
-}
+## Exploratory visualization by diagnosis
 
-```
+This plot shows how often Alzheimer's-related symptoms occur in patients with and without a diagnosis. The symptoms 'behavioral problems' and 'memory complaints' appear to be more frequent in AD patients.
 
 ```{r}
-library(corrplot)
+#use symptom block
+symptom_vars <- intersect(blocks$Symptoms, names(df))
 
-# select numeric variables only
-num_df <- df[, sapply(df, is.numeric)]
-
-# correlation matrix
-corr_mat <- cor(num_df, use = "pairwise.complete.obs")
-
-# plot
-corrplot(corr_mat, method = "color", type = "upper",
-         tl.col = "black", tl.cex = 0.8,
-         title = "Correlation Heatmap of Numeric Variables")
-
-```
-
-```{r}
-# --- Correlation of continuous variables with Diagnosis ---
-library(dplyr)
-
-# Ensure Diagnosis is numeric 0/1 for correlation
-dx_num <- if (is.factor(df$Diagnosis)) {
-  as.numeric(df$Diagnosis == "Yes")
-} else {
-  as.numeric(df$Diagnosis)
-}
-
-# Continuous variables to test
-cont_vars <- c("Age", "BMI", "AlcoholConsumption", "PhysicalActivity", 
-               "DietQuality", "SleepQuality", "SystolicBP", "DiastolicBP",
-               "CholesterolTotal", "CholesterolLDL", "CholesterolHDL",
-               "CholesterolTriglycerides", "MMSE",
-               "FunctionalAssessment", "ADL")
-
-# Compute correlations (point-biserial = Pearson with binary outcome)
-cor_results <- sapply(cont_vars, function(v) {
-  if (all(is.na(df[[v]]))) {
-    return(NA_real_)
-  } else {
-    return(cor(df[[v]], dx_num, use = "pairwise.complete.obs"))
-  }
-})
-
-# Create a tidy results table
-cor_table <- data.frame(
-  Variable = cont_vars,
-  Correlation = cor_results
-) |>
-  arrange(desc(abs(Correlation)))
-
-# Print correlation table
-print(cor_table)
-
-# --- Visualization ---
-bar_cols <- ifelse(cor_table$Correlation > 0, "steelblue", "tomato")
-
-barplot(cor_table$Correlation,
-        names.arg = cor_table$Variable,
-        las = 2, col = bar_cols,
-        main = "Correlation of Continuous Variables with Alzheimer's Diagnosis",
-        ylab = "Correlation coefficient", cex.names = 0.8)
-abline(h = 0, lty = 2)
-
-```
-
-“Correlation doesn’t equal predictive power; this is just linear association.”
-
-```{r}
-# run PCA on scaled numeric vars
-pca_res <- prcomp(num_df, center = TRUE, scale. = TRUE)
-
-# summary of explained variance
-summary(pca_res)
-
-# scree plot (variance explained per PC)
-plot(pca_res, type = "l", main = "Scree Plot")
-
-```
-
-```{r}
-# --- Step 1: run PCA on numeric variables ---
-num_df <- df[, sapply(df, is.numeric)]
-num_df$PatientID <- NULL   # drop ID if still present
-num_df$Diagnosis <- NULL   # drop outcome before PCA
-
-pca_res <- prcomp(num_df, center = TRUE, scale. = TRUE)
-
-# --- Step 2: PCA summary + scree plot ---
-summary(pca_res)
-plot(pca_res, type = "l", main = "Scree Plot")
-
-# --- Step 3: biplot with Diagnosis overlay ---
-library(ggplot2)
-
-# Make Diagnosis a factor with nice labels
-pca_df <- data.frame(pca_res$x,
-                     Diagnosis = factor(df$Diagnosis,
-                                        levels = c(0,1),
-                                        labels = c("No AD","AD")))
-
-ggplot(pca_df, aes(x = PC1, y = PC2, color = Diagnosis)) +
-  geom_point(alpha = 0.6, size = 2) +
-  theme_minimal() +
-  scale_color_manual(values = c("No AD" = "#E69F00",   # orange
-                                "AD"    = "#56B4E9")) + # blue
-  labs(title = "PCA: PC1 vs PC2",
-       subtitle = "Colored by Alzheimer's Diagnosis",
-       color = "Diagnosis")
-
-# --- Step 4: loadings (variable contributions) ---
-loadings <- as.data.frame(pca_res$rotation)
-loadings$Variable <- rownames(loadings)
-
-top_PC1 <- loadings[order(abs(loadings$PC1), decreasing = TRUE), c("Variable","PC1")][1:10,]
-top_PC2 <- loadings[order(abs(loadings$PC2), decreasing = TRUE), c("Variable","PC2")][1:10,]
-
-print("Top contributors to PC1:")
-print(top_PC1)
-
-print("Top contributors to PC2:")
-print(top_PC2)
-
-# Visualize loadings as barplots
-ggplot(top_PC1, aes(x = reorder(Variable, PC1), y = PC1)) +
-  geom_col(fill = "steelblue") +
-  coord_flip() +
-  theme_minimal() +
-  labs(title = "Top 10 variable loadings on PC1", x = NULL, y = "Loading")
-
-ggplot(top_PC2, aes(x = reorder(Variable, PC2), y = PC2)) +
-  geom_col(fill = "tomato") +
-  coord_flip() +
-  theme_minimal() +
-  labs(title = "Top 10 variable loadings on PC2", x = NULL, y = "Loading")
-
-
-
-```
-
-```{r}
-library(ggplot2)
-
-# extract scores for first 2 PCs
-pca_df <- as.data.frame(pca_res$x[,1:2])
-pca_df$Diagnosis <- df$Diagnosis
-
-ggplot(pca_df, aes(x = PC1, y = PC2, color = Diagnosis)) +
-  geom_point(alpha = 0.7) +
-  labs(title = "PCA of Patients (PC1 vs PC2)") +
-  theme_minimal()
-
-```
-
-```{r}
-library(ggplot2)
-ggplot(df, aes(x = factor(Diagnosis, labels=c("No AD","AD")), y = MMSE, fill = factor(Diagnosis))) +
-  geom_boxplot(alpha=0.6) +
-  scale_fill_manual(values=c("#E69F00","#56B4E9")) +
-  theme_minimal() +
-  labs(x="Diagnosis", y="MMSE Score", title="MMSE by Diagnosis")
-
-```
-
-```{r}
-ggplot(df, aes(x = factor(Diagnosis, labels=c("No AD","AD")), fill = factor(Smoking))) +
-  geom_bar(position="fill") +
-  scale_fill_manual(values=c("grey70","darkred"), labels=c("Non-smoker","Smoker")) +
-  labs(y="Proportion", x="Diagnosis", fill="Smoking") +
-  theme_minimal()
-
-```
-
-```{r}
-# --- Symptom heatmap by Diagnosis ---
-
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-
-# Select symptom columns
-symptom_vars <- c("MemoryComplaints", "BehavioralProblems", "Confusion",
-                  "Disorientation", "PersonalityChanges",
-                  "DifficultyCompletingTasks", "Forgetfulness")
-
-# Calculate proportions of patients with each symptom by diagnosis
+#summarize proportion of "Yes" responses for each symptom variable per diagnosis group
 symptom_summary <- df %>%
   group_by(Diagnosis) %>%
-  summarise(across(all_of(symptom_vars), ~ mean(.x, na.rm = TRUE))) %>%
+  summarise(across(all_of(symptom_vars), ~ mean(.x == "Yes", na.rm = TRUE))) %>%
   pivot_longer(-Diagnosis, names_to = "Symptom", values_to = "Proportion")
 
-# Convert Diagnosis to labels
-symptom_summary$Diagnosis <- factor(symptom_summary$Diagnosis,
-                                    levels = c(0, 1),
-                                    labels = c("No AD", "AD"))
-
-# Plot heatmap
-ggplot(symptom_summary, aes(x = Symptom, y = Diagnosis, fill = Proportion)) +
-  geom_tile(color = "white") +
-  scale_fill_gradient(low = "white", high = "darkred") +
+#visualize symptom prevalence differences between AD and No AD
+ggplot(symptom_summary, aes(x = Symptom, y = Proportion, fill = Diagnosis)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
-  labs(title = "Symptom prevalence by Diagnosis",
-       x = "Symptom", y = "Diagnosis", fill = "Proportion")
-
+  labs(title = "Symptom Prevalence by Diagnosis",
+       x = "Symptom", y = "Proportion of Patients", fill = "Diagnosis")
 ```
 
+These boxplots compare lifestyle and clinical factors between groups. There does not seem to be a separation between the AD and no-AD group, suggesting that these features have limited predictive power.
+
 ```{r}
-library(dplyr)
-library(tidyr)
-library(ggplot2)
+#define all continuous (numeric) lifestyle + clinical variables
+continuous_vars <- c(
+  "Age", "BMI", "AlcoholConsumption", "PhysicalActivity", "DietQuality",
+  "SleepQuality", "SystolicBP", "DiastolicBP", "CholesterolTotal",
+  "CholesterolLDL", "CholesterolHDL", "CholesterolTriglycerides"
+)
 
-# Pick continuous variables of interest
-cont_vars <- c("BMI", "AlcoholConsumption", "PhysicalActivity", 
-               "DietQuality", "SleepQuality", 
-               "SystolicBP", "DiastolicBP", 
-               "CholesterolTotal", "CholesterolLDL", 
-               "CholesterolHDL", "CholesterolTriglycerides")
+#keep only those that exist in the dataset
+continuous_vars <- intersect(continuous_vars, names(df))
 
-# Reshape to long format
+#reshape for plotting
 df_long <- df %>%
-  select(Diagnosis, all_of(cont_vars)) %>%
+  select(Diagnosis, all_of(continuous_vars)) %>%
   pivot_longer(-Diagnosis, names_to = "Variable", values_to = "Value")
 
-# Turn Diagnosis into labels
-df_long$Diagnosis <- factor(df_long$Diagnosis,
-                            levels = c(0,1),
-                            labels = c("No AD","AD"))
-
-# Faceted boxplots
+#create boxplots
 ggplot(df_long, aes(x = Diagnosis, y = Value, fill = Diagnosis)) +
   geom_boxplot(alpha = 0.6, outlier.size = 0.8) +
   scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
   facet_wrap(~ Variable, scales = "free_y", ncol = 3) +
   theme_minimal() +
-  labs(title = "Continuous Variables by Diagnosis",
-       x = "Diagnosis", y = "Value", fill = "Diagnosis")
-
+  labs(
+    title = "Continuous Lifestyle and Clinical Variables by Diagnosis",
+    subtitle = "Distributions of key continuous variables across AD and No AD groups",
+    x = "Diagnosis", y = "Value", fill = "Diagnosis"
+  )
 ```
 
-```{r}
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-
-# Cognitive/functional variables
-cog_vars <- c("MMSE", "FunctionalAssessment", "ADL")
-
-# Reshape to long format
-df_cog <- df %>%
-  select(Diagnosis, all_of(cog_vars)) %>%
-  pivot_longer(-Diagnosis, names_to = "Variable", values_to = "Value")
-
-# Turn Diagnosis into labels
-df_cog$Diagnosis <- factor(df_cog$Diagnosis,
-                           levels = c(0,1),
-                           labels = c("No AD","AD"))
-
-# Faceted boxplots
-ggplot(df_cog, aes(x = Diagnosis, y = Value, fill = Diagnosis)) +
-  geom_boxplot(alpha = 0.6, outlier.size = 0.8) +
-  scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
-  facet_wrap(~ Variable, scales = "free_y", ncol = 3) +
-  theme_minimal() +
-  labs(title = "Cognitive and Functional Scores by Diagnosis",
-       x = "Diagnosis", y = "Score", fill = "Diagnosis")
-
-```
+Here, cognitive and functional test scores are compared between groups. AD patients consistently score below clinical cut-offs (red dashed lines), confirming these are the most discriminative features. Interestingly, the no-AD group also has quite some scores below the clinical cut-off, indicating that these are not healthy controls
 
 ```{r}
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-
-# Cognitive/functional variables
-cog_vars <- c("MMSE", "FunctionalAssessment", "ADL")
-
-# Reshape to long format
+#reshape cognitive data 
 df_cog <- df %>%
-  select(Diagnosis, all_of(cog_vars)) %>%
+  select(Diagnosis, all_of(blocks$Cognitive)) %>%
   pivot_longer(-Diagnosis, names_to = "Variable", values_to = "Value")
 
-# Turn Diagnosis into labels
-df_cog$Diagnosis <- factor(df_cog$Diagnosis,
-                           levels = c(0,1),
-                           labels = c("No AD","AD"))
-
-# Calculate group medians
+#compute median scores per group for annotation
 meds <- df_cog %>%
   group_by(Diagnosis, Variable) %>%
   summarise(median_val = median(Value, na.rm = TRUE), .groups = "drop")
 
-# Faceted boxplots with medians annotated
-ggplot(df_cog, aes(x = Diagnosis, y = Value, fill = Diagnosis)) +
-  geom_boxplot(alpha = 0.6, outlier.size = 0.8) +
-  geom_text(data = meds,
-            aes(x = Diagnosis, y = median_val, 
-                label = round(median_val, 1)),
-            color = "black", vjust = -0.7, size = 3.5,
-            inherit.aes = FALSE) +
-  scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
-  facet_wrap(~ Variable, scales = "free_y", ncol = 3) +
-  theme_minimal() +
-  labs(title = "Cognitive and Functional Scores by Diagnosis",
-       subtitle = "Medians annotated above each box",
-       x = "Diagnosis", y = "Score", fill = "Diagnosis")
-
-```
-
-```{r}
-# Define cut-offs for each variable
+#define known clinical cut-offs for each test
 cutoffs <- data.frame(
   Variable = c("MMSE", "FunctionalAssessment", "ADL"),
   cutoff = c(24, 7, 7)
 )
 
+#boxplot visualization
 ggplot(df_cog, aes(x = Diagnosis, y = Value, fill = Diagnosis)) +
   geom_boxplot(alpha = 0.6, outlier.size = 0.8) +
-  geom_text(data = meds,
-            aes(x = Diagnosis, y = median_val,
-                label = round(median_val, 1)),
-            color = "black", vjust = -0.7, size = 3.5,
-            inherit.aes = FALSE) +
-  geom_hline(data = cutoffs, aes(yintercept = cutoff),
-             linetype = "dashed", color = "red") +
+  geom_text(
+    data = meds,
+    aes(x = Diagnosis, y = median_val, label = round(median_val, 1)),
+    color = "black", vjust = -0.7, size = 3.5, inherit.aes = FALSE
+  ) +
+  geom_hline(
+    data = cutoffs, aes(yintercept = cutoff),
+    linetype = "dashed", color = "red"
+  ) +
   facet_wrap(~ Variable, scales = "free_y", ncol = 3) +
   scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
   theme_minimal() +
-  labs(title = "Cognitive and Functional Scores by Diagnosis",
-       subtitle = "Red dashed line = clinical cut-off for impairment",
-       x = "Diagnosis", y = "Score", fill = "Diagnosis")
+  labs(
+    title = "Cognitive and Functional Scores by Diagnosis",
+    subtitle = "Red dashed line = clinical cut-off; medians annotated",
+    x = "Diagnosis", y = "Score", fill = "Diagnosis"
+  )
 
 ```
 
+## Principal component analysis (PCA) on numeric variables
+
+In this section, I apply a Principal Component Analysis (PCA) to all numeric variables to explore overall structure and relationships in the dataset. The data were centered and scaled, making sure that the variables measured on different scales contribute equally to the analysis.
+
+The scree plot shows the variance explained by each principal component, helping identify how many components capture meaningful information.
+
+\
+The PCA scatter plot, colored by diagnosis, shows whether AD and no-AD participants separate based on underlying variable combinations. Unfortunately, no clear clustering can be seen.
+
 ```{r}
-library(ggplot2)
+#step 1: prepare numeric data for PCA 
+#select only numeric variables and remove identifiers/outcome variable
+num_df <- df[, sapply(df, is.numeric), drop = FALSE]
+if ("PatientID" %in% names(num_df)) num_df$PatientID <- NULL
+if ("Diagnosis" %in% names(num_df)) num_df$Diagnosis <- NULL
 
-# Make a labelled Diagnosis variable
-df$DiagnosisLabel <- factor(df$Diagnosis,
-                            levels = c(0,1),
-                            labels = c("No AD", "AD"))
+#step 2: perform PCA on standardized data 
+#center and scale variables to equalize their contribution
+pca_res <- prcomp(num_df, center = TRUE, scale. = TRUE)
 
-# Density plot of MMSE with shaded normal range
-ggplot(df, aes(x = MMSE, fill = DiagnosisLabel)) +
-  # Shaded region for normal cognition
-  annotate("rect", xmin = 25, xmax = 30, ymin = 0, ymax = Inf,
-           alpha = 0.2, fill = "grey70") +
-  geom_density(alpha = 0.5) +
-  scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
+#step 3: examine explained variance 
+summary(pca_res)
+plot(pca_res, type = "l", main = "Scree Plot")
+
+#step 4: visualize PCA results by diagnosis 
+pca_df <- data.frame(pca_res$x,
+                     Diagnosis = factor(df$Diagnosis, levels = c("No AD", "AD")))
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Diagnosis)) +
+  geom_point(alpha = 0.6, size = 2) +
   theme_minimal() +
-  labs(title = "Distribution of MMSE Scores",
-       subtitle = "Shaded area = normal cognition (≥25)",
-       x = "MMSE Score", y = "Density", fill = "Diagnosis")
+  scale_color_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
+  labs(title = "PCA: PC1 vs PC2",
+       subtitle = "Colored by Alzheimer's Diagnosis",
+       color = "Diagnosis")
 
-```
+#step 5: identify key contributing variables 
+#extract variable loadings and identify top contributors to PC1 and PC2
+loadings <- as.data.frame(pca_res$rotation)
+loadings$Variable <- rownames(loadings)
 
-```{r}
-library(ggplot2)
-library(dplyr)
-library(tidyr)
+top_PC1 <- loadings[order(abs(loadings$PC1), decreasing = TRUE), c("Variable", "PC1")][1:10, ]
+top_PC2 <- loadings[order(abs(loadings$PC2), decreasing = TRUE), c("Variable", "PC2")][1:10, ]
 
-# Add Diagnosis labels
-df$DiagnosisLabel <- factor(df$Diagnosis,
-                            levels = c(0,1),
-                            labels = c("No AD", "AD"))
+cat("Top contributors to PC1:\n"); print(top_PC1)
+cat("Top contributors to PC2:\n"); print(top_PC2)
 
-# Define cut-offs for each test
-cutoffs <- data.frame(
-  Variable = c("MMSE", "ADL", "FunctionalAssessment"),
-  cutoff_low = c(25, 7, 7),   # clinical cut-off
-  cutoff_high = c(30, 10, 10) # max possible
-)
-
-# Reshape data
-df_long <- df %>%
-  select(DiagnosisLabel, MMSE, ADL, FunctionalAssessment) %>%
-  pivot_longer(-DiagnosisLabel, names_to = "Variable", values_to = "Value")
-
-# Merge cutoffs into long data for plotting
-df_long <- left_join(df_long, cutoffs, by = "Variable")
-
-# Plot densities with shaded cutoff regions
-ggplot(df_long, aes(x = Value, fill = DiagnosisLabel)) +
-  geom_density(alpha = 0.5) +
-  geom_rect(aes(xmin = cutoff_low, xmax = cutoff_high, ymin = 0, ymax = Inf),
-            fill = "grey70", alpha = 0.2, inherit.aes = FALSE) +
-  facet_wrap(~ Variable, scales = "free", ncol = 1) +
-  scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
-  theme_minimal() +
-  labs(title = "Distributions of Cognitive and Functional Scores",
-       subtitle = "Shaded areas = normal / unimpaired ranges",
-       x = "Score", y = "Density", fill = "Diagnosis")
-
-```
-
-```{r}
-library(dplyr)
-library(caret)
-library(ggplot2)
-
-# --- Step 1: Select predictors and outcome properly ---
-data_model <- df %>%
-  select(-PatientID, -DiagnosisLabel)
-
-# Make Diagnosis a factor (outcome)
-data_model$Diagnosis <- factor(data_model$Diagnosis, levels = c(0,1), labels = c("No AD","AD"))
-
-# Separate predictors and outcome
-predictors <- data_model %>% select(-Diagnosis)
-outcome <- data_model$Diagnosis
-
-# --- Step 2: Train/test split ---
-set.seed(123)
-trainIndex <- createDataPartition(outcome, p = 0.7, list = FALSE)
-trainData <- data_model[trainIndex, ]
-testData  <- data_model[-trainIndex, ]
-
-# --- Step 3: Fit logistic regression with caret ---
-fit_glm <- train(Diagnosis ~ ., data = trainData,
-                 method = "glm", family = "binomial",
-                 trControl = trainControl(method = "cv", number = 5))
-
-# --- Step 4: Variable importance ---
-var_imp <- varImp(fit_glm, scale = TRUE)
-
-# Convert to dataframe for plotting
-var_imp_df <- data.frame(Variable = rownames(var_imp$importance),
-                         Importance = var_imp$importance$Overall)
-
-# Keep top 15 variables
-top_imp <- var_imp_df %>%
-  arrange(desc(Importance)) %>%
-  head(15)
-
-# --- Step 5: Plot ---
-ggplot(top_imp, aes(x = reorder(Variable, Importance), y = Importance)) +
+#step 6: visualize top loadings for interpretation 
+ggplot(top_PC1, aes(x = reorder(Variable, PC1), y = PC1)) +
   geom_col(fill = "steelblue") +
   coord_flip() +
   theme_minimal() +
-  labs(title = "Top predictors of Alzheimer's (Logistic Regression)",
-       x = NULL, y = "Importance (scaled)")
+  labs(title = "Top 10 Variable Loadings on PC1", x = NULL, y = "Loading")
 
+ggplot(top_PC2, aes(x = reorder(Variable, PC2), y = PC2)) +
+  geom_col(fill = "tomato") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top 10 Variable Loadings on PC2", x = NULL, y = "Loading")
 ```
 
-```{r}
-sapply(df, class)
-```
+## Logistic regression model & ROC analysis
+
+To identify the main factors contributing to Alzheimer's diagnosis, I trained a logistic regression model using all available variables. A stratified train/test split (70/30) ensured that both groups had a similar proportion of Alzheimer’s and non-Alzheimer’s cases.
+
+The model was trained using 5-fold cross-validation to avoid overfitting and estimate generalization performance.
+
+After fitting the model, I examined variable importance, which shows how much each predictor contributes to the classification. As expected, cognitive and functional assessments came up as the most influential predictors.
+
+The confusion matrix below shows how well the model distinguishes between AD and no-AD cases.
 
 ```{r}
-library(dplyr)
-library(caret)
-library(ggplot2)
-
-# --- Step 1: Ensure categorical variables are factors ---
-df$Gender <- factor(df$Gender, levels = c(0,1), labels = c("Male","Female"))
-df$Ethnicity <- factor(df$Ethnicity, levels = c(0,1,2,3),
-                       labels = c("Caucasian","African American","Asian","Other"))
-df$EducationLevel <- factor(df$EducationLevel, levels = 0:3,
-                            labels = c("None","High School","Bachelor","Higher"))
-df$Smoking <- factor(df$Smoking, levels = c(0,1), labels = c("No","Yes"))
-df$FamilyHistoryAlzheimers <- factor(df$FamilyHistoryAlzheimers, levels = c(0,1), labels = c("No","Yes"))
-df$CardiovascularDisease <- factor(df$CardiovascularDisease, levels = c(0,1), labels = c("No","Yes"))
-df$Diabetes <- factor(df$Diabetes, levels = c(0,1), labels = c("No","Yes"))
-df$Depression <- factor(df$Depression, levels = c(0,1), labels = c("No","Yes"))
-df$HeadInjury <- factor(df$HeadInjury, levels = c(0,1), labels = c("No","Yes"))
-df$Hypertension <- factor(df$Hypertension, levels = c(0,1), labels = c("No","Yes"))
-df$MemoryComplaints <- factor(df$MemoryComplaints, levels = c(0,1), labels = c("No","Yes"))
-df$BehavioralProblems <- factor(df$BehavioralProblems, levels = c(0,1), labels = c("No","Yes"))
-df$Confusion <- factor(df$Confusion, levels = c(0,1), labels = c("No","Yes"))
-df$Disorientation <- factor(df$Disorientation, levels = c(0,1), labels = c("No","Yes"))
-df$PersonalityChanges <- factor(df$PersonalityChanges, levels = c(0,1), labels = c("No","Yes"))
-df$DifficultyCompletingTasks <- factor(df$DifficultyCompletingTasks, levels = c(0,1), labels = c("No","Yes"))
-df$Forgetfulness <- factor(df$Forgetfulness, levels = c(0,1), labels = c("No","Yes"))
-
-# Outcome (only keep one encoding!)
-df$Diagnosis <- factor(df$Diagnosis, levels = c(0,1), labels = c("No AD","AD"))
-df$DiagnosisLabel <- NULL   # remove duplicate outcome label if it exists
-
-# --- Step 2: Clean modeling dataset ---
+#data preparation 
 data_model <- df %>% select(-PatientID)
 
-# --- Step 3: Train/test split ---
-set.seed(123)
+#stratified train/test split
 trainIndex <- createDataPartition(data_model$Diagnosis, p = 0.7, list = FALSE)
 trainData <- data_model[trainIndex, ]
 testData  <- data_model[-trainIndex, ]
 
-# --- Step 4: Fit logistic regression ---
+#logistic regression 
 fit_glm <- train(Diagnosis ~ ., data = trainData,
                  method = "glm", family = "binomial",
                  trControl = trainControl(method = "cv", number = 5))
 
-# --- Step 5: Variable importance ---
+#variable importance
 var_imp <- varImp(fit_glm, scale = TRUE)
 var_imp_df <- data.frame(Variable = rownames(var_imp$importance),
                          Importance = var_imp$importance$Overall)
-
 top_imp <- var_imp_df %>% arrange(desc(Importance)) %>% head(15)
 
 ggplot(top_imp, aes(x = reorder(Variable, Importance), y = Importance)) +
   geom_col(fill = "steelblue") +
   coord_flip() +
   theme_minimal() +
-  labs(title = "Top predictors of Alzheimer's (Logistic Regression)",
+  labs(title = "Top Predictors of Alzheimer's (Logistic Regression)",
        x = NULL, y = "Importance (scaled)")
 
-# --- Step 6: Model evaluation on test data ---
-preds <- predict(fit_glm, newdata = testData)
-conf_mat <- confusionMatrix(preds, testData$Diagnosis)
-print(conf_mat)
+#confusion matrix 
+preds_class <- predict(fit_glm, newdata = testData)
+conf_mat <- confusionMatrix(preds_class, testData$Diagnosis, positive = "AD")
+conf_mat
 
+#visualize confusion matrix 
+cm_df <- as.data.frame(conf_mat$table)
+colnames(cm_df) <- c("Prediction", "Reference", "Freq")
+
+ggplot(cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), color = "black", size = 5) +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  theme_minimal() +
+  labs(title = "Confusion Matrix (Full Logistic Model)",
+       x = "Actual Diagnosis", y = "Predicted Diagnosis", fill = "Count")
 ```
 
-```{r}
-library(pROC)
+## ROC curve: full model vs risk-only model
 
-# --- ROC curve for test data ---
-# Get predicted probabilities instead of classes
-probs <- predict(fit_glm, newdata = testData, type = "prob")
+To evaluate the predictive performance of the logistic regression model, I compared two versions:
 
-# caret puts probabilities in columns by class → we want "AD"
-roc_obj <- roc(response = testData$Diagnosis,
-               predictor = probs$AD,
-               levels = rev(levels(testData$Diagnosis)))
+1.  A full model, including all available variables.
+2.  A risk-only model, containing only demographic and health-related factors (excluding cognitive tests and symptom variables).
 
-# Plot ROC curve
-plot(roc_obj, col = "steelblue", lwd = 2, main = "ROC Curve for Alzheimer's Prediction")
-abline(a = 0, b = 1, lty = 2, col = "grey")
+I used ROC (Receiver Operating Characteristic) curves to assess how well each model distinguishes between AD and no-AD cases. The AUC (Area Under the Curve) summarizes overall classification ability. Higher values indicate better discrimination.
 
-# Print AUC
-auc(roc_obj)
+The model achieved an AUC of \~0.88, while the risk-only model achieved an AUC of \~0.59, indicating that the inclusion of cognitive and functional assessments dramatically improves predictive performance.
 
-```
+This comparison confirms that biological and lifestyle risk factors alone are not sufficient to distinguish AD patients accurately, whereas cognitive test results provide most of the diagnostic power.
 
 ```{r}
-library(caret)
-library(pROC)
+#full model predictions
+probs_full <- predict(fit_glm, newdata = testData, type = "prob")
+roc_full <- roc(
+  response = testData$Diagnosis,
+  predictor = probs_full$`AD`,
+  levels = rev(levels(testData$Diagnosis))
+)
 
-# --- Step 1: Define groups of variables ---
-clinical_vars <- c("MMSE", "ADL", "FunctionalAssessment", 
-                   "MemoryComplaints", "BehavioralProblems", 
-                   "Confusion", "Disorientation", 
-                   "PersonalityChanges", "DifficultyCompletingTasks", 
-                   "Forgetfulness")
+#define "risk-only" subset (exclude cognitive + symptom variables) 
+exclude_vars <- c(blocks$Cognitive, blocks$Symptoms)
+risk_vars <- setdiff(names(df), c("PatientID", "Diagnosis", exclude_vars))
 
-# risk factors = everything except PatientID, DoctorInCharge, Diagnosis, and clinical vars
-risk_vars <- setdiff(names(df), c("PatientID", "DoctorInCharge", "DiagnosisLabel", "Diagnosis", clinical_vars))
+#keep only variables that have variation (no constant factors)
+risk_vars_filtered <- risk_vars[
+  sapply(trainData[, risk_vars, drop = FALSE], function(x) length(unique(x)) > 1)
+]
 
-# --- Step 2: Ensure outcome is a factor with 2 levels ---
-df$Diagnosis <- factor(df$Diagnosis, levels = c("No AD","AD"))
-
-# --- Step 3: Train/test split (stratified) ---
-set.seed(123)
-trainIndex <- createDataPartition(df$Diagnosis, p = 0.7, list = FALSE)
-trainData <- df[trainIndex, ]
-testData  <- df[-trainIndex, ]
-
-# --- Step 4: Drop zero-variance predictors in training set ---
-risk_vars_filtered <- risk_vars[sapply(trainData[, risk_vars], function(x) length(unique(x)) > 1)]
-
-# --- Step 5: Build logistic regression formula ---
+#build and fit the risk-only model
 risk_formula <- as.formula(paste("Diagnosis ~", paste(risk_vars_filtered, collapse = " + ")))
-
-# --- Step 6: Fit logistic regression (risk factors only) ---
 risk_model <- glm(risk_formula, data = trainData, family = binomial)
 
-# --- Step 7: Predictions on test set ---
-pred_probs <- predict(risk_model, newdata = testData, type = "response")
-pred_class <- ifelse(pred_probs > 0.5, "AD", "No AD")
-pred_class <- factor(pred_class, levels = levels(df$Diagnosis))
+#predict and compute ROC for risk-only model
+pred_probs_risk <- predict(risk_model, newdata = testData, type = "response")
+roc_risk <- roc(testData$Diagnosis, pred_probs_risk, levels = c("No AD", "AD"))
 
-# --- Step 8: Confusion matrix ---
-conf_matrix <- confusionMatrix(pred_class, testData$Diagnosis)
-print(conf_matrix)
-
-# --- Step 9: ROC curve + AUC ---
-roc_res <- roc(testData$Diagnosis, pred_probs, levels = c("No AD","AD"))
-plot(roc_res, col = "darkorange", lwd = 2,
-     main = "ROC Curve (Risk Factors Only)")
-auc(roc_res)
-
-
-
-```
-
-```{r}
-sapply(df, class)
-```
-
-```{r}
-plot(roc_full, col = "steelblue", lwd = 2, main = "ROC: Full vs Risk-Only",
-     legacy.axes = TRUE)   # makes x-axis 1-Specificity (FPR)
+#combined ROC plot 
+plot(roc_full, col = "steelblue", lwd = 2,
+     main = "ROC Curve: Full Model vs. Risk-Only Model",
+     legacy.axes = TRUE)
 plot(roc_risk, add = TRUE, col = "darkorange", lwd = 2, lty = 2)
 
 legend("bottomright",
-       legend = c(paste0("Full (AUC=", round(auc(roc_full),3),")"),
-                  paste0("Risk-only (AUC=", round(auc(roc_risk),3),")")),
-       col = c("steelblue","darkorange"), lwd = 2, lty = c(1,2), bty = "n")
+       legend = c(
+         paste0("Full model (AUC = ", round(auc(roc_full), 3), ")"),
+         paste0("Risk-only model (AUC = ", round(auc(roc_risk), 3), ")")
+       ),
+       col = c("steelblue", "darkorange"),
+       lwd = 2, lty = c(1, 2), bty = "n")
+
+#AUC values
+auc(roc_full)
+auc(roc_risk)
+
 ```
 
-```{r}
-table(df$Diagnosis)
-prop.table(table(df$Diagnosis))
-```
+## Logistic regression coefficients
 
-*moderately imbalanced (65% vs 35%) but not severely skewed, so standard classification approaches are applicable.*
+To better understand which factors most strongly influence the likelihood of developing Alzheimer’s disease, I fitted a simplified logistic regression model including key demographic, health, and cognitive variables.
 
-```{r}
-write.csv(df, "clean_alzheimers.csv", row.names = FALSE)
-```
+The model summary provides log-odds coefficients, where:
 
-# data analysis
+-   Positive coefficients indicate higher likelihood of Alzheimer’s diagnosis,
 
-```{r}
-# baseline predictors: demographics + lifestyle + medical history
-baseline_vars <- c("Age", "Gender", "Ethnicity", "EducationLevel",
-                   "BMI", "Smoking", "AlcoholConsumption", 
-                   "PhysicalActivity", "DietQuality", "SleepQuality",
-                   "FamilyHistoryAlzheimers", "CardiovascularDisease", 
-                   "Diabetes", "Depression", "HeadInjury", "Hypertension")
-```
+-   Negative coefficients indicate lower likelihood.
 
-```{r}
-set.seed(123)  # reproducibility
-train_index <- sample(seq_len(nrow(df)), size = 0.7*nrow(df))
-train <- df[train_index, ]
-test  <- df[-train_index, ]
-```
+The plot below visualizes these coefficients, with stars (`*`) denoting significance levels. All significant coefficients appear to be p\<0.001.
+
+From this analysis:
+
+-   Cognitive measures show strong negative coefficients, meaning that higher scores (better cognitive or functional performance) are associated with lower Alzheimer’s risk.
+
+-   Memory complaints and behavioral problems have large positive coefficients, indicating a higher likelihood of Alzheimer’s diagnosis.
+
+-   Age, gender, and cardiovascular/metabolic factors (e.g., diabetes, hypertension) were not statistically significant in this dataset.
+
+Overall, this regression confirms that clinical cognitive assessments and observable behavioral symptoms are the strongest indicators of Alzheimer’s, aligning with expectations from clinical diagnosis criteria.
 
 ```{r}
-# build formula dynamically
-formula_baseline <- as.formula(
-  paste("Diagnosis ~", paste(baseline_vars, collapse = " + "))
+#fit simplified logistic regression model
+#includes demographic, health, and cognitive variables
+model <- glm(
+  Diagnosis ~ Age + Gender + EducationLevel + Depression + 
+    Hypertension + Diabetes + MMSE + ADL + FunctionalAssessment + 
+    MemoryComplaints + BehavioralProblems, 
+  data = df, 
+  family = binomial
 )
 
-# fit logistic regression
-baseline_model <- glm(formula_baseline, data = train, family = binomial)
-summary(baseline_model)
+#model summary 
+summary(model)
+
+#visualize coefficients (log-odds) with significance stars
+tidy(model) %>%
+  filter(term != "(Intercept)") %>%    #remove intercept
+  mutate(
+    Significance = ifelse(
+      p.value < 0.001, "***", 
+      ifelse(p.value < 0.05, "*", "")
+    )
+  ) %>%
+  ggplot(aes(x = reorder(term, estimate), y = estimate, fill = estimate > 0)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(aes(label = Significance), hjust = -0.2, size = 4) +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Predictors of Alzheimer's Diagnosis (Logistic Regression)",
+    x = "Variable", 
+    y = "Coefficient (log-odds)"
+  )
 ```
 
-```{r}
-# predicted probabilities
-pred_probs <- predict(baseline_model, newdata = test, type = "response")
+## Logistic regression results: odds ratios 
 
-# classify with 0.5 threshold
-pred_class <- ifelse(pred_probs > 0.5, "Yes", "No")
-pred_class <- factor(pred_class, levels = levels(test$Diagnosis))
+This table presents the logistic regression coefficients in terms of odds ratios (OR) for easier interpretation.\
+
+An OR above 1 indicates a variable is associated with increased odds of Alzheimer’s disease, while an OR below 1 indicates a protective effect.
+
+```{r}
+#convert log-odds coefficients into OR with 95% CI
+#makes interpretation more intuitive — values >1 increase AD risk, <1 decrease it
+
+#step 1: compute OR and CI
+or_table <- tidy(model, conf.int = TRUE, exponentiate = TRUE) %>%
+  filter(term != "(Intercept)") %>%  #exclude intercept term
+  mutate(
+    p_value = ifelse(p.value < 0.001, "<0.001", round(p.value, 3)),  #format p-values
+    Effect = case_when(
+      estimate > 1 ~ "↑ AD risk",   #odds ratio > 1 = increased risk
+      estimate < 1 ~ "↓ AD risk",   #odds ratio < 1 = decreased risk
+      TRUE ~ "No effect"
+    )
+  ) %>%
+  select(
+    Variable = term,
+    `Odds Ratio` = estimate,
+    `95% CI Lower` = conf.low,
+    `95% CI Upper` = conf.high,
+    `p-value` = p_value,
+    Effect
+  ) %>%
+  mutate(across(where(is.numeric), ~ round(., 2)))  #round numeric columns for clarity
+
+
+#step 2: format as a styled table for easy viewing
+or_table_gt <- or_table %>%
+  gt() %>%
+  tab_header(
+    title = md("**Predictors of Alzheimer's Diagnosis**"),
+    subtitle = md("Logistic Regression — Odds Ratios with 95% Confidence Intervals")
+  ) %>%
+  fmt_number(
+    columns = c(`Odds Ratio`, `95% CI Lower`, `95% CI Upper`),
+    decimals = 2
+  ) %>%
+  cols_label(
+    `Odds Ratio` = "Odds Ratio",
+    `95% CI Lower` = "95% CI (Lower)",
+    `95% CI Upper` = "95% CI (Upper)",
+    `p-value` = "p-value",
+    Effect = "Effect Direction"
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(columns = vars(Effect))
+  )
+
+or_table_gt
 ```
 
+## Multiblock analysis: comparing predictive strength across variable groups
+
+In this section, I perform a multiblock analysis. Initially, I attempted to do a multiblock PCA, but I could not get that to work, so I decided to take its principles and use it for logistic regression instead. That way I could still evaluate how well a specific domain predicts Alzheimer's disease.
+
+This multiblock analysis shows that cognitive measures produce the highest AUC, confirming their role in distinguishing AD from non-AD individuals, while lifestyle and symptom blocks have comparatively weaker predictive value.
+
 ```{r}
-library(caret)
-library(pROC)
+#evaluate each block independently
+#for each conceptual block (Cognitive, Clinical, Lifestyle, Symptoms),
+#fit a logistic regression model and compute AUC to assess predictive power
 
-# confusion matrix
-confusionMatrix(pred_class, test$Diagnosis)
+results <- data.frame(Block = character(), AUC = numeric(), stringsAsFactors = FALSE)
 
-# ROC AUC
-roc_obj <- roc(test$Diagnosis, pred_probs, levels = c("No","Yes"))
-auc(roc_obj)
+for (b in names(blocks)) {
+  vars <- blocks[[b]]
+  data_sub <- df[, c(vars, "Diagnosis")]
+  data_sub <- data_sub[complete.cases(data_sub), ]  # remove incomplete rows
+  
+  #logistic regression per block
+  model <- glm(Diagnosis ~ ., data = data_sub, family = binomial)
+  
+  #compute AUC
+  preds <- predict(model, type = "response")
+  auc_val <- roc(data_sub$Diagnosis, preds)$auc
+  
+  results <- rbind(results, data.frame(Block = b, AUC = auc_val))
+}
 
-# plot ROC curve
-plot(roc_obj, col="blue", lwd=2, main="ROC Curve - Baseline Logistic Regression")
+#visualize AUC results 
+ggplot(results, aes(x = Block, y = AUC, fill = Block)) +
+  geom_col(show.legend = FALSE) +
+  ylim(0, 1) +
+  geom_text(aes(label = round(AUC, 3)), vjust = -0.5) +
+  theme_minimal() +
+  labs(title = "Predictive Performance by Variable Group",
+       subtitle = "Area Under the ROC Curve (AUC) for Each Block",
+       y = "AUC (0–1 scale)", x = "Variable Block")
+
+```
+
+## Random Forest model for Alzheimer's prediction (validation)
+
+To validate the findings from the logistic regression model, I trained a Random Forest classifier using variables from all defined blocks. Random Forest is a robust, nonlinear method that evaluates how well each variable contributes to the prediction of Alzheimer’s diagnosis by measuring the Mean Decrease in Gini Impurity, a measure of how much each variable improves classification accuracy.
+
+The plot shows the most influential features in the model. Variables with a higher Mean Decrease in Gini scores contribute stronger to AD classification.
+
+```{r}
+#select relevant variables 
+vars <- unique(c(
+  "Diagnosis",
+  blocks$Cognitive,
+  blocks$Clinical,
+  blocks$Lifestyle,
+  blocks$Symptoms
+))
+
+rf_data <- df %>%
+  dplyr::select(any_of(vars)) %>%  # safely selects existing columns
+  na.omit()
+
+#ensure Diagnosis is a factor
+rf_data$Diagnosis <- as.factor(rf_data$Diagnosis)
+
+#train Random Forest model ---
+rf_model <- randomForest(
+  Diagnosis ~ .,
+  data = rf_data,
+  importance = TRUE,
+  ntree = 500
+)
+
+#extract variable importance (Mean Decrease in Gini) 
+imp <- importance(rf_model)
+imp_df <- data.frame(
+  Variable = rownames(imp),
+  Importance = imp[, "MeanDecreaseGini"]
+) %>%
+  arrange(desc(Importance)) %>%
+  mutate(Variable = factor(Variable, levels = rev(Variable)))
+
+#plot variable importance 
+ggplot(imp_df, aes(x = Variable, y = Importance)) +
+  geom_col(fill = "#56B4E9") +
+  coord_flip() +
+  theme_minimal(base_size = 14) +
+  labs(title = "Top Predictors of Alzheimer’s\n(Random Forest Importance)",
+       subtitle = "Higher = greater contribution to Alzheimer's classification",
+       x = "Variable", y = "Importance (Mean Decrease in Gini)") +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12),
+    axis.text.y = element_text(face = "bold"),
+    plot.margin = grid::unit(c(10, 40, 10, 10), "pt")
+  )
+
+```
+
+## Elastic Net Regularized Regression
+
+To further validate the results and handle potential multicollinearity between predictors, I did an Elastic Net regression. Elastic Net combines Lasso (L1) and Ridge (L2) penalties, encouraging both feature selection and coefficient shrinkage.
+
+I used the same predictors used in the RF model as input. The output was a sparse model that highlighted which predictors retain non-zero coefficients after regularization
+
+The cross-validation plot shows how model performance changes with different penalty strengths (λ).\
+The dashed lines mark the optimal λ (minimum error) and the 1-SE rule, which favors a simpler, more robust model.
+
+```{r}
+#prepare data
+x <- model.matrix(Diagnosis ~ ., data = rf_data)[, -1]
+y <- as.numeric(rf_data$Diagnosis) - 1
+
+#fit Elastic Net with cross-validation
+cvfit <- cv.glmnet(x, y, alpha = 0.5, family = "binomial")
+
+#adjust margins to prevent text cutoff
+op <- par(no.readonly = TRUE)  # save old plot settings
+par(mar = c(5, 5, 6, 2) + 0.1) # increase top margin
+
+#plot cross-validation curve with proper spacing
+plot(cvfit)
+title(
+  main = "Elastic Net Model Tuning (10-fold Cross-Validation)",
+  sub = "Dashed lines show λ minimizing and 1-SE rule",
+  cex.main = 1.2, cex.sub = 0.9, line = 2
+)
+
+#reset plot parameters
+par(op)
+
+#extract non-zero coefficients
+coef_df <- as.data.frame(as.matrix(coef(cvfit, s = "lambda.min")))
+coef_df <- coef_df[coef_df != 0, , drop = FALSE]
+print(coef_df)
+
+```
+
+## Elastic Net Coefficient Analysis
+
+After fitting the Elastic Net model, only a subset of predictors retained **non-zero coefficients**, meaning they carry unique predictive information after penalization. The figure below shows the **direction and magnitude** of these effects. The results once again confirm previous findings.
+
+```{r}
+#coefficient data 
+coef_df <- data.frame(
+  Variable = c("MMSE", "ADL", "FunctionalAssessment", "MemoryComplaintsYes",
+               "BehavioralProblemsYes", "Age", "GenderFemale",
+               "HypertensionYes", "DiabetesYes"),
+  Coefficient = c(-0.091, -0.337, -0.371, 2.199, 1.979, -0.009, -0.003, 0.192, -0.076)
+)
+
+#annotate direction of effect 
+coef_df <- coef_df %>%
+  mutate(Direction = ifelse(Coefficient > 0,
+                            "Increases AD likelihood",
+                            "Decreases AD likelihood"))
+
+#plot coefficients 
+ggplot(coef_df, aes(x = reorder(Variable, Coefficient), y = Coefficient, fill = Direction)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  scale_fill_manual(values = c("Decreases AD likelihood" = "#56B4E9", "Increases AD likelihood" = "#E69F00")) +
+  labs(title = "Elastic Net Coefficients for Alzheimer's Prediction",
+       subtitle = "Regularized model confirms key cognitive and behavioral predictors",
+       x = "Variable", y = "Coefficient (penalized estimate)", fill = "Effect Direction") 
 ```
