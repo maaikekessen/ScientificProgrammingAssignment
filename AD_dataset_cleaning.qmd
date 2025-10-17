@@ -29,4 +29,15 @@ df <- read.csv(
   na.strings = c("NaN", "nan", "Nan", "NA", "N/A", "", " "),
   dec = "."
 )
+
+#inspect the dataset structure: variable types and first few entries
+str(df)
+
+#check for missing values per column
+cat("----- Missing values per column -----\n")
+print(colSums(is.na(df)))
+
+#display descriptive summary statistics for all variables
+cat("----- Summary statistics -----\n")
+print(summary(df, maxsum = 10))
 ```
