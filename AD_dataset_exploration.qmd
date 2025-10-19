@@ -30,31 +30,22 @@ invisible(lapply(packages, library, character.only = TRUE))
 #(change this path to match your local device)
 setwd("C:/Users/Maaike/Documents/uni/scientific programming/assignment/ScientificProgrammingAssignment")
 
-#load the Alzheimer's dataset
-# - use ";" as the separator
-# - convert various NA indicators (NaN, N/A, blanks) into proper NA values
-# - ensure decimals are correctly interpreted
+# Read the cleaned CSV produced by the cleaning script
+# (write.csv creates comma-separated files)
 df <- read.csv(
-  "cleaned_alzheimers_dataset.csv",
-  sep = ";",
+  file = "cleaned_alzheimers_dataset.csv",
   header = TRUE,
-  na.strings = c("NaN", "nan", "Nan", "NA", "N/A", "", " "),
-  dec = "."
+  sep = ",",            # <-- comma!
+  na.strings = "NA",    # write.csv writes NA as "NA" by default
+  stringsAsFactors = FALSE
 )
 
-#inspect the dataset structure: variable types and first few entries
+#sanity check
 str(df)
-
-#check for missing values per column
-cat("----- Missing values per column -----\n")
-print(colSums(is.na(df)))
-
-#display descriptive summary statistics for all variables
-cat("----- Summary statistics -----\n")
-print(summary(df, maxsum = 10))
+summary(df)
 ```
 
-## Define variable blocks 
+## Define variable blocks
 
 In the code below, I define some blocks that are used later in the analysis, therefore getting rid of redundancies.
 
@@ -123,4 +114,28 @@ for (var in cat_vars) {
           col = "lightgreen",
           border = "gray40")
 }
+```
+
+## Exploratory visualization by diagnosis
+
+This plot shows how often Alzheimer's-related symptoms occur in patients with and without a diagnosis. The symptoms 'behavioral problems' and 'memory complaints' appear to be more frequent in AD patients.
+
+```{r}
+#use symptom block
+symptom_vars <- intersect(blocks$Symptoms, names(df))
+
+#summarize proportion of "Yes" responses for each symptom variable per diagnosis group
+symptom_summary <- df %>%
+  group_by(Diagnosis) %>%
+  summarise(across(all_of(symptom_vars), ~ mean(.x == "Yes", na.rm = TRUE))) %>%
+  pivot_longer(-Diagnosis, names_to = "Symptom", values_to = "Proportion")
+
+#visualize symptom prevalence differences between AD and No AD
+ggplot(symptom_summary, aes(x = Symptom, y = Proportion, fill = Diagnosis)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+  labs(title = "Symptom Prevalence by Diagnosis",
+       x = "Symptom", y = "Proportion of Patients", fill = "Diagnosis")
 ```
