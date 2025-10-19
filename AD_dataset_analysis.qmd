@@ -170,3 +170,122 @@ auc(roc_full)
 auc(roc_risk)
 
 ```
+
+## Logistic regression coefficients
+
+To better understand which factors most strongly influence the likelihood of developing Alzheimer’s disease, I fitted a simplified logistic regression model including key demographic, health, and cognitive variables.
+
+The model summary provides log-odds coefficients, where:
+
+-   Positive coefficients indicate higher likelihood of Alzheimer’s diagnosis,
+
+-   Negative coefficients indicate lower likelihood.
+
+The plot below visualizes these coefficients, with stars (`*`) denoting significance levels. All significant coefficients appear to be p\<0.001.
+
+From this analysis:
+
+-   Cognitive measures show strong negative coefficients, meaning that higher scores (better cognitive or functional performance) are associated with lower Alzheimer’s risk.
+
+-   Memory complaints and behavioral problems have large positive coefficients, indicating a higher likelihood of Alzheimer’s diagnosis.
+
+-   Age, gender, and cardiovascular/metabolic factors (e.g., diabetes, hypertension) were not statistically significant in this dataset.
+
+Overall, this regression confirms that clinical cognitive assessments and observable behavioral symptoms are the strongest indicators of Alzheimer’s, aligning with expectations from clinical diagnosis criteria.
+
+```{r}
+#ensure Diagnosis is a binary factor with correct level order
+df$Diagnosis <- factor(df$Diagnosis, levels = c("No AD", "AD"))
+
+#fit simplified logistic regression model
+#includes demographic, health, and cognitive variables
+model <- glm(
+  Diagnosis ~ Age + Gender + EducationLevel + Depression + 
+    Hypertension + Diabetes + MMSE + ADL + FunctionalAssessment + 
+    MemoryComplaints + BehavioralProblems, 
+  data = df, 
+  family = binomial
+)
+
+#model summary 
+summary(model)
+
+#visualize coefficients (log-odds) with significance stars
+tidy(model) %>%
+  filter(term != "(Intercept)") %>%    #remove intercept
+  mutate(
+    Significance = ifelse(
+      p.value < 0.001, "***", 
+      ifelse(p.value < 0.05, "*", "")
+    )
+  ) %>%
+  ggplot(aes(x = reorder(term, estimate), y = estimate, fill = estimate > 0)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(aes(label = Significance), hjust = -0.2, size = 4) +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Predictors of Alzheimer's Diagnosis (Logistic Regression)",
+    x = "Variable", 
+    y = "Coefficient (log-odds)"
+  )
+```
+
+## Logistic regression results: odds ratios
+
+This table presents the logistic regression coefficients in terms of odds ratios (OR) for easier interpretation.
+
+An OR above 1 indicates a variable is associated with increased odds of Alzheimer’s disease, while an OR below 1 indicates a protective effect.
+
+```{r}
+#convert log-odds coefficients into OR with 95% CI
+#makes interpretation more intuitive — values >1 increase AD risk, <1 decrease it
+
+#step 1: compute OR and CI
+or_table <- tidy(model, conf.int = TRUE, exponentiate = TRUE) %>%
+  filter(term != "(Intercept)") %>%  #exclude intercept term
+  mutate(
+    p_value = ifelse(p.value < 0.001, "<0.001", round(p.value, 3)),  #format p-values
+    Effect = case_when(
+      estimate > 1 ~ "↑ AD risk",   #odds ratio > 1 = increased risk
+      estimate < 1 ~ "↓ AD risk",   #odds ratio < 1 = decreased risk
+      TRUE ~ "No effect"
+    )
+  ) %>%
+  select(
+    Variable = term,
+    `Odds Ratio` = estimate,
+    `95% CI Lower` = conf.low,
+    `95% CI Upper` = conf.high,
+    `p-value` = p_value,
+    Effect
+  ) %>%
+  mutate(across(where(is.numeric), ~ round(., 2)))  #round numeric columns for clarity
+
+
+#step 2: format as a styled table for easy viewing
+or_table_gt <- or_table %>%
+  gt() %>%
+  tab_header(
+    title = md("**Predictors of Alzheimer's Diagnosis**"),
+    subtitle = md("Logistic Regression — Odds Ratios with 95% Confidence Intervals")
+  ) %>%
+  fmt_number(
+    columns = c(`Odds Ratio`, `95% CI Lower`, `95% CI Upper`),
+    decimals = 2
+  ) %>%
+  cols_label(
+    `Odds Ratio` = "Odds Ratio",
+    `95% CI Lower` = "95% CI (Lower)",
+    `95% CI Upper` = "95% CI (Upper)",
+    `p-value` = "p-value",
+    Effect = "Effect Direction"
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(columns = vars(Effect))
+  )
+
+or_table_gt
+
+```
