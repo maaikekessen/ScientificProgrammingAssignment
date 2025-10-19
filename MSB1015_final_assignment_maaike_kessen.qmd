@@ -280,13 +280,13 @@ if ("Diagnosis" %in% names(df)) {
 }
 
 #export cleaned dataset
-output_path <- "cleaned_alzheimers_dataset.csv"
+output_path <- file.path("cleaned_alzheimers_dataset.csv")
 write.csv(df, output_path, row.names = FALSE)
 ```
 
-## Define variable blocks 
+## Define variable blocks
 
-IN the code below, I define some blocks that are used later in the analysis, therefore getting rid of redundancies.
+In the code below, I define some blocks that are used later in the analysis, therefore getting rid of redundancies.
 
 ```{r}
 cognitive_vars <- c("MMSE", "ADL", "FunctionalAssessment")
@@ -684,7 +684,7 @@ tidy(model) %>%
   )
 ```
 
-## Logistic regression results: odds ratios 
+## Logistic regression results: odds ratios
 
 This table presents the logistic regression coefficients in terms of odds ratios (OR) for easier interpretation.\
 

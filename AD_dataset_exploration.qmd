@@ -7,6 +7,8 @@ editor: visual
 
 # Alzheimer’s disease analysis: data exploration
 
+This notebook is the second of 3 needed for this analysis. It explores the cleaned data by visualizing it using boxplots and barplots. At the end, a PCA analysis is performed.
+
 ```{r}
 #list all required packages
 packages <- c(
@@ -35,7 +37,7 @@ setwd("C:/Users/Maaike/Documents/uni/scientific programming/assignment/Scientifi
 df <- read.csv(
   file = "cleaned_alzheimers_dataset.csv",
   header = TRUE,
-  sep = ",",            # <-- comma!
+  sep = ",",          
   na.strings = "NA",    # write.csv writes NA as "NA" by default
   stringsAsFactors = FALSE
 )

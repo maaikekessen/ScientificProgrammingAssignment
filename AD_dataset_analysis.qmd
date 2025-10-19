@@ -7,6 +7,8 @@ editor: visual
 
 # Alzheimer’s disease analysis: data analysis
 
+This notebook is the final of 3 needed for the analysis. It performs a logistic regression, plots the ROC, and creates an OR table. Furthermore, it performs a multi-block analysis, followed by random forrest and elasticNet for validation.
+
 ```{r}
 #list all required packages
 packages <- c(

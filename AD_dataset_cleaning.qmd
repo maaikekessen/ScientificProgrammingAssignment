@@ -7,6 +7,8 @@ editor: visual
 
 # Alzheimer’s disease analysis: data cleaning
 
+This notebook is the first of 3 needed for this analysis. This script investigates the data, reformats variables, checks for outliers and performs median imputation. Lastly, it changes all categorical variables into factors.
+
 ## Data import and initial inspection
 
 In this section, I load and inspect the Alzheimer’s dataset.\
@@ -245,5 +247,6 @@ if ("Diagnosis" %in% names(df)) {
 }
 
 #export cleaned dataset
+output_path <- file.path("cleaned_alzheimers_dataset.csv")
 write.csv(df, output_path, row.names = FALSE)
 ```
