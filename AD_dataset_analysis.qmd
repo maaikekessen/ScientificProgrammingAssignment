@@ -1,0 +1,109 @@
+---
+title: "AD_dataset_analysis"
+author: "Maaike Kessen"
+format: html
+editor: visual
+---
+
+# Alzheimer’s disease analysis: data analysis
+
+```{r}
+#list all required packages
+packages <- c(
+  "ggplot2", "caret", "tidyverse", "dplyr",
+  "pROC", "broom", "gt", "randomForest", "glmnet"
+)
+
+#check which are not installed and install them automatically
+installed <- packages %in% rownames(installed.packages())
+if (any(!installed)) {
+  cat("Installing missing packages:\n")
+  install.packages(packages[!installed], dependencies = TRUE)
+}
+
+#load all packages
+invisible(lapply(packages, library, character.only = TRUE))
+```
+
+```{r}
+#set the working directory
+#(change this path to match your local device)
+setwd("C:/Users/Maaike/Documents/uni/scientific programming/assignment/ScientificProgrammingAssignment")
+
+# Read the cleaned CSV produced by the cleaning script
+# (write.csv creates comma-separated files)
+df <- read.csv(
+  file = "cleaned_alzheimers_dataset.csv",
+  header = TRUE,
+  sep = ",",            
+  na.strings = "NA",    # write.csv writes NA as "NA" by default
+  stringsAsFactors = FALSE
+)
+
+#sanity check
+str(df)
+summary(df)
+
+#set global seed 
+set.seed(123)
+```
+
+## Define variable blocks
+
+In the code below, I define some blocks that are used later in the analysis, therefore getting rid of redundancies.
+
+```{r}
+cognitive_vars <- c("MMSE", "ADL", "FunctionalAssessment")
+clinical_vars  <- c("Age", "Gender", "Hypertension", "Diabetes", "Depression")
+lifestyle_vars <- c("PhysicalActivity", "DietQuality", "SleepQuality", "AlcoholConsumption")
+symptom_vars   <- c("MemoryComplaints", "BehavioralProblems", "Confusion",
+                    "Disorientation", "PersonalityChanges", "Forgetfulness",
+                    "DifficultyCompletingTasks")
+
+#create a named list for easy iteration in later analyses
+blocks <- list(
+  Cognitive  = cognitive_vars,
+  Clinical   = clinical_vars,
+  Lifestyle  = lifestyle_vars,
+  Symptoms   = symptom_vars
+)
+```
+
+## Logistic regression model & ROC analysis
+
+To identify the main factors contributing to Alzheimer's diagnosis, I trained a logistic regression model using all available variables. A stratified train/test split (70/30) ensured that both groups had a similar proportion of Alzheimer’s and non-Alzheimer’s cases.
+
+The model was trained using 5-fold cross-validation to avoid overfitting and estimate generalization performance.
+
+After fitting the model, I examined variable importance, which shows how much each predictor contributes to the classification. As expected, cognitive and functional assessments came up as the most influential predictors.
+
+The confusion matrix below shows how well the model distinguishes between AD and no-AD cases.
+
+```{r}
+#confusion matrix
+preds_class <- predict(fit_glm, newdata = testData)
+
+#ensure both are factors with the same levels
+testData$Diagnosis <- factor(testData$Diagnosis, levels = c("No AD", "AD"))
+preds_class <- factor(preds_class, levels = c("No AD", "AD"))
+
+conf_mat <- confusionMatrix(preds_class, testData$Diagnosis, positive = "AD")
+conf_mat
+
+#visualize confusion matrix
+cm_df <- as.data.frame(conf_mat$table)
+colnames(cm_df) <- c("Prediction", "Reference", "Freq")
+
+ggplot(cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), color = "black", size = 5) +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  theme_minimal() +
+  labs(
+    title = "Confusion Matrix (Full Logistic Model)",
+    x = "Actual Diagnosis",
+    y = "Predicted Diagnosis",
+    fill = "Count"
+  )
+
+```
