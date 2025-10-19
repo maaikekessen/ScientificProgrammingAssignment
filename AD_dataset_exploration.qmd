@@ -139,3 +139,34 @@ ggplot(symptom_summary, aes(x = Symptom, y = Proportion, fill = Diagnosis)) +
   labs(title = "Symptom Prevalence by Diagnosis",
        x = "Symptom", y = "Proportion of Patients", fill = "Diagnosis")
 ```
+
+These boxplots compare lifestyle and clinical factors between groups. There does not seem to be a separation between the AD and no-AD group, suggesting that these features have limited predictive power.
+
+```{r}
+#define all continuous (numeric) lifestyle + clinical variables
+continuous_vars <- c(
+  "Age", "BMI", "AlcoholConsumption", "PhysicalActivity", "DietQuality",
+  "SleepQuality", "SystolicBP", "DiastolicBP", "CholesterolTotal",
+  "CholesterolLDL", "CholesterolHDL", "CholesterolTriglycerides"
+)
+
+#keep only those that exist in the dataset
+continuous_vars <- intersect(continuous_vars, names(df))
+
+#reshape for plotting
+df_long <- df %>%
+  select(Diagnosis, all_of(continuous_vars)) %>%
+  pivot_longer(-Diagnosis, names_to = "Variable", values_to = "Value")
+
+#create boxplots
+ggplot(df_long, aes(x = Diagnosis, y = Value, fill = Diagnosis)) +
+  geom_boxplot(alpha = 0.6, outlier.size = 0.8) +
+  scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 3) +
+  theme_minimal() +
+  labs(
+    title = "Continuous Lifestyle and Clinical Variables by Diagnosis",
+    subtitle = "Distributions of key continuous variables across AD and No AD groups",
+    x = "Diagnosis", y = "Value", fill = "Diagnosis"
+  )
+```
