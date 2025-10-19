@@ -107,3 +107,66 @@ ggplot(cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
   )
 
 ```
+
+## ROC curve: full model vs risk-only model
+
+To evaluate the predictive performance of the logistic regression model, I compared two versions:
+
+1.  A full model, including all available variables.
+2.  A risk-only model, containing only demographic and health-related factors (excluding cognitive tests and symptom variables).
+
+I used ROC (Receiver Operating Characteristic) curves to assess how well each model distinguishes between AD and no-AD cases. The AUC (Area Under the Curve) summarizes overall classification ability. Higher values indicate better discrimination.
+
+The model achieved an AUC of \~0.88, while the risk-only model achieved an AUC of \~0.59, indicating that the inclusion of cognitive and functional assessments dramatically improves predictive performance.
+
+This comparison confirms that biological and lifestyle risk factors alone are not sufficient to distinguish AD patients accurately, whereas cognitive test results provide most of the diagnostic power.
+
+```{r}
+#ensure outcome is a factor with correct levels
+trainData$Diagnosis <- factor(trainData$Diagnosis, levels = c("No AD", "AD"))
+testData$Diagnosis  <- factor(testData$Diagnosis,  levels = c("No AD", "AD"))
+
+#full model predictions
+probs_full <- predict(fit_glm, newdata = testData, type = "prob")
+roc_full <- roc(
+  response = testData$Diagnosis,
+  predictor = probs_full$`AD`,
+  levels = rev(levels(testData$Diagnosis))
+)
+
+#define "risk-only" subset (exclude cognitive + symptom variables) 
+exclude_vars <- c(blocks$Cognitive, blocks$Symptoms)
+risk_vars <- setdiff(names(df), c("PatientID", "Diagnosis", exclude_vars))
+
+#keep only variables that have variation (no constant factors)
+risk_vars_filtered <- risk_vars[
+  sapply(trainData[, risk_vars, drop = FALSE], function(x) length(unique(x)) > 1)
+]
+
+#build and fit the risk-only model
+risk_formula <- as.formula(paste("Diagnosis ~", paste(risk_vars_filtered, collapse = " + ")))
+risk_model <- glm(risk_formula, data = trainData, family = binomial)
+
+#predict and compute ROC for risk-only model
+pred_probs_risk <- predict(risk_model, newdata = testData, type = "response")
+roc_risk <- roc(testData$Diagnosis, pred_probs_risk, levels = c("No AD", "AD"))
+
+#combined ROC plot 
+plot(roc_full, col = "steelblue", lwd = 2,
+     main = "ROC Curve: Full Model vs. Risk-Only Model",
+     legacy.axes = TRUE)
+plot(roc_risk, add = TRUE, col = "darkorange", lwd = 2, lty = 2)
+
+legend("bottomright",
+       legend = c(
+         paste0("Full model (AUC = ", round(auc(roc_full), 3), ")"),
+         paste0("Risk-only model (AUC = ", round(auc(roc_risk), 3), ")")
+       ),
+       col = c("steelblue", "darkorange"),
+       lwd = 2, lty = c(1, 2), bty = "n")
+
+#AUC values
+auc(roc_full)
+auc(roc_risk)
+
+```
