@@ -289,3 +289,43 @@ or_table_gt <- or_table %>%
 or_table_gt
 
 ```
+
+## Multiblock analysis: comparing predictive strength across variable groups
+
+In this section, I perform a multiblock analysis. Initially, I attempted to do a multiblock PCA, but I could not get that to work, so I decided to take its principles and use it for logistic regression instead. That way I could still evaluate how well a specific domain predicts Alzheimer's disease.
+
+This multiblock analysis shows that cognitive measures produce the highest AUC, confirming their role in distinguishing AD from non-AD individuals, while lifestyle and symptom blocks have comparatively weaker predictive value.
+
+```{r}
+#evaluate each block independently
+#for each conceptual block (Cognitive, Clinical, Lifestyle, Symptoms),
+#fit a logistic regression model and compute AUC to assess predictive power
+
+results <- data.frame(Block = character(), AUC = numeric(), stringsAsFactors = FALSE)
+
+for (b in names(blocks)) {
+  vars <- blocks[[b]]
+  data_sub <- df[, c(vars, "Diagnosis")]
+  data_sub <- data_sub[complete.cases(data_sub), ]  # remove incomplete rows
+  
+  #logistic regression per block
+  model <- glm(Diagnosis ~ ., data = data_sub, family = binomial)
+  
+  #compute AUC
+  preds <- predict(model, type = "response")
+  auc_val <- roc(data_sub$Diagnosis, preds)$auc
+  
+  results <- rbind(results, data.frame(Block = b, AUC = auc_val))
+}
+
+#visualize AUC results 
+ggplot(results, aes(x = Block, y = AUC, fill = Block)) +
+  geom_col(show.legend = FALSE) +
+  ylim(0, 1) +
+  geom_text(aes(label = round(AUC, 3)), vjust = -0.5) +
+  theme_minimal() +
+  labs(title = "Predictive Performance by Variable Group",
+       subtitle = "Area Under the ROC Curve (AUC) for Each Block",
+       y = "AUC (0–1 scale)", x = "Variable Block")
+
+```
