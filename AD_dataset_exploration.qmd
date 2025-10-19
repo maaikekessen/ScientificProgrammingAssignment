@@ -170,3 +170,105 @@ ggplot(df_long, aes(x = Diagnosis, y = Value, fill = Diagnosis)) +
     x = "Diagnosis", y = "Value", fill = "Diagnosis"
   )
 ```
+
+Here, cognitive and functional test scores are compared between groups. AD patients consistently score below clinical cut-offs (red dashed lines), confirming these are the most discriminative features. Interestingly, the no-AD group also has quite some scores below the clinical cut-off, indicating that these are not healthy controls.
+
+```{r}
+#reshape cognitive data 
+df_cog <- df %>%
+  select(Diagnosis, all_of(blocks$Cognitive)) %>%
+  pivot_longer(-Diagnosis, names_to = "Variable", values_to = "Value")
+
+#compute median scores per group for annotation
+meds <- df_cog %>%
+  group_by(Diagnosis, Variable) %>%
+  summarise(median_val = median(Value, na.rm = TRUE), .groups = "drop")
+
+#define known clinical cut-offs for each test
+cutoffs <- data.frame(
+  Variable = c("MMSE", "FunctionalAssessment", "ADL"),
+  cutoff = c(24, 7, 7)
+)
+
+#boxplot visualization
+ggplot(df_cog, aes(x = Diagnosis, y = Value, fill = Diagnosis)) +
+  geom_boxplot(alpha = 0.6, outlier.size = 0.8) +
+  geom_text(
+    data = meds,
+    aes(x = Diagnosis, y = median_val, label = round(median_val, 1)),
+    color = "black", vjust = -0.7, size = 3.5, inherit.aes = FALSE
+  ) +
+  geom_hline(
+    data = cutoffs, aes(yintercept = cutoff),
+    linetype = "dashed", color = "red"
+  ) +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 3) +
+  scale_fill_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
+  theme_minimal() +
+  labs(
+    title = "Cognitive and Functional Scores by Diagnosis",
+    subtitle = "Red dashed line = clinical cut-off; medians annotated",
+    x = "Diagnosis", y = "Score", fill = "Diagnosis"
+  )
+```
+
+## Principal component analysis (PCA) on numeric variables
+
+In this section, I apply a Principal Component Analysis (PCA) to all numeric variables to explore overall structure and relationships in the dataset. The data were centered and scaled, making sure that the variables measured on different scales contribute equally to the analysis.
+
+The scree plot shows the variance explained by each principal component, helping identify how many components capture meaningful information.
+
+\
+The PCA scatter plot, colored by diagnosis, shows whether AD and no-AD participants separate based on underlying variable combinations. Unfortunately, no clear clustering can be seen.
+
+```{r}
+#step 1: prepare numeric data for PCA 
+#select only numeric variables and remove identifiers/outcome variable
+num_df <- df[, sapply(df, is.numeric), drop = FALSE]
+if ("PatientID" %in% names(num_df)) num_df$PatientID <- NULL
+if ("Diagnosis" %in% names(num_df)) num_df$Diagnosis <- NULL
+
+#step 2: perform PCA on standardized data 
+#center and scale variables to equalize their contribution
+pca_res <- prcomp(num_df, center = TRUE, scale. = TRUE)
+
+#step 3: examine explained variance 
+summary(pca_res)
+plot(pca_res, type = "l", main = "Scree Plot")
+
+#step 4: visualize PCA results by diagnosis 
+pca_df <- data.frame(pca_res$x,
+                     Diagnosis = factor(df$Diagnosis, levels = c("No AD", "AD")))
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Diagnosis)) +
+  geom_point(alpha = 0.6, size = 2) +
+  theme_minimal() +
+  scale_color_manual(values = c("No AD" = "#E69F00", "AD" = "#56B4E9")) +
+  labs(title = "PCA: PC1 vs PC2",
+       subtitle = "Colored by Alzheimer's Diagnosis",
+       color = "Diagnosis")
+
+#step 5: identify key contributing variables 
+#extract variable loadings and identify top contributors to PC1 and PC2
+loadings <- as.data.frame(pca_res$rotation)
+loadings$Variable <- rownames(loadings)
+
+top_PC1 <- loadings[order(abs(loadings$PC1), decreasing = TRUE), c("Variable", "PC1")][1:10, ]
+top_PC2 <- loadings[order(abs(loadings$PC2), decreasing = TRUE), c("Variable", "PC2")][1:10, ]
+
+cat("Top contributors to PC1:\n"); print(top_PC1)
+cat("Top contributors to PC2:\n"); print(top_PC2)
+
+#step 6: visualize top loadings for interpretation 
+ggplot(top_PC1, aes(x = reorder(Variable, PC1), y = PC1)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top 10 Variable Loadings on PC1", x = NULL, y = "Loading")
+
+ggplot(top_PC2, aes(x = reorder(Variable, PC2), y = PC2)) +
+  geom_col(fill = "tomato") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top 10 Variable Loadings on PC2", x = NULL, y = "Loading")
+```
