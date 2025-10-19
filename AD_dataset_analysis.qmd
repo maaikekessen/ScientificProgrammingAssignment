@@ -329,3 +329,59 @@ ggplot(results, aes(x = Block, y = AUC, fill = Block)) +
        y = "AUC (0–1 scale)", x = "Variable Block")
 
 ```
+
+## Random Forest model for Alzheimer's prediction (validation)
+
+To validate the findings from the logistic regression model, I trained a Random Forest classifier using variables from all defined blocks. Random Forest is a robust, nonlinear method that evaluates how well each variable contributes to the prediction of Alzheimer’s diagnosis by measuring the Mean Decrease in Gini Impurity, a measure of how much each variable improves classification accuracy.
+
+The plot shows the most influential features in the model. Variables with a higher Mean Decrease in Gini scores contribute stronger to AD classification.
+
+```{r}
+#select relevant variables 
+vars <- unique(c(
+  "Diagnosis",
+  blocks$Cognitive,
+  blocks$Clinical,
+  blocks$Lifestyle,
+  blocks$Symptoms
+))
+
+rf_data <- df %>%
+  dplyr::select(any_of(vars)) %>%  # safely selects existing columns
+  na.omit()
+
+#ensure Diagnosis is a factor
+rf_data$Diagnosis <- as.factor(rf_data$Diagnosis)
+
+#train Random Forest model ---
+rf_model <- randomForest(
+  Diagnosis ~ .,
+  data = rf_data,
+  importance = TRUE,
+  ntree = 500
+)
+
+#extract variable importance (Mean Decrease in Gini) 
+imp <- importance(rf_model)
+imp_df <- data.frame(
+  Variable = rownames(imp),
+  Importance = imp[, "MeanDecreaseGini"]
+) %>%
+  arrange(desc(Importance)) %>%
+  mutate(Variable = factor(Variable, levels = rev(Variable)))
+
+#plot variable importance 
+ggplot(imp_df, aes(x = Variable, y = Importance)) +
+  geom_col(fill = "#56B4E9") +
+  coord_flip() +
+  theme_minimal(base_size = 14) +
+  labs(title = "Top Predictors of Alzheimer’s\n(Random Forest Importance)",
+       subtitle = "Higher = greater contribution to Alzheimer's classification",
+       x = "Variable", y = "Importance (Mean Decrease in Gini)") +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12),
+    axis.text.y = element_text(face = "bold"),
+    plot.margin = grid::unit(c(10, 40, 10, 10), "pt")
+  )
+```
