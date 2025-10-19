@@ -385,3 +385,71 @@ ggplot(imp_df, aes(x = Variable, y = Importance)) +
     plot.margin = grid::unit(c(10, 40, 10, 10), "pt")
   )
 ```
+
+## Elastic Net Regularized Regression
+
+To further validate the results and handle potential multicollinearity between predictors, I did an Elastic Net regression. Elastic Net combines Lasso (L1) and Ridge (L2) penalties, encouraging both feature selection and coefficient shrinkage.
+
+I used the same predictors used in the RF model as input. The output was a sparse model that highlighted which predictors retain non-zero coefficients after regularization
+
+The cross-validation plot shows how model performance changes with different penalty strengths (λ).\
+The dashed lines mark the optimal λ (minimum error) and the 1-SE rule, which favors a simpler, more robust model.
+
+```{r}
+#prepare data
+x <- model.matrix(Diagnosis ~ ., data = rf_data)[, -1]
+y <- as.numeric(rf_data$Diagnosis) - 1
+
+#fit Elastic Net with cross-validation
+cvfit <- cv.glmnet(x, y, alpha = 0.5, family = "binomial")
+
+#adjust margins to prevent text cutoff
+op <- par(no.readonly = TRUE)  # save old plot settings
+par(mar = c(5, 5, 6, 2) + 0.1) # increase top margin
+
+#plot cross-validation curve with proper spacing
+plot(cvfit)
+title(
+  main = "Elastic Net Model Tuning (10-fold Cross-Validation)",
+  sub = "Dashed lines show λ minimizing and 1-SE rule",
+  cex.main = 1.2, cex.sub = 0.9, line = 2
+)
+
+#reset plot parameters
+par(op)
+
+#extract non-zero coefficients
+coef_df <- as.data.frame(as.matrix(coef(cvfit, s = "lambda.min")))
+coef_df <- coef_df[coef_df != 0, , drop = FALSE]
+print(coef_df)
+```
+
+## Elastic Net Coefficient Analysis
+
+After fitting the Elastic Net model, only a subset of predictors retained **non-zero coefficients**, meaning they carry unique predictive information after penalization. The figure below shows the **direction and magnitude** of these effects. The results once again confirm previous findings.
+
+```{r}
+#coefficient data 
+coef_df <- data.frame(
+  Variable = c("MMSE", "ADL", "FunctionalAssessment", "MemoryComplaintsYes",
+               "BehavioralProblemsYes", "Age", "GenderFemale",
+               "HypertensionYes", "DiabetesYes"),
+  Coefficient = c(-0.091, -0.337, -0.371, 2.199, 1.979, -0.009, -0.003, 0.192, -0.076)
+)
+
+#annotate direction of effect 
+coef_df <- coef_df %>%
+  mutate(Direction = ifelse(Coefficient > 0,
+                            "Increases AD likelihood",
+                            "Decreases AD likelihood"))
+
+#plot coefficients 
+ggplot(coef_df, aes(x = reorder(Variable, Coefficient), y = Coefficient, fill = Direction)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  scale_fill_manual(values = c("Decreases AD likelihood" = "#56B4E9", "Increases AD likelihood" = "#E69F00")) +
+  labs(title = "Elastic Net Coefficients for Alzheimer's Prediction",
+       subtitle = "Regularized model confirms key cognitive and behavioral predictors",
+       x = "Variable", y = "Coefficient (penalized estimate)", fill = "Effect Direction") 
+```
